@@ -3,11 +3,11 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // @ts-ignore - Permite que o Next.js aceite requisições de desenvolvimento do Ngrok
   allowedDevOrigins: ["shrine-dropbox-fidgety.ngrok-free.dev"],
-  // Desabilitar restrições de host do Turbopack para permitir Ngrok em desenvolvimento
   experimental: {
+    proxyClientMaxBodySize: "60mb",
     serverActions: {
-      allowedOrigins: ["shrine-dropbox-fidgety.ngrok-free.dev", "localhost:3000"]
-    }
+      allowedOrigins: ["shrine-dropbox-fidgety.ngrok-free.dev", "localhost:3000"],
+    },
   },
   async headers() {
     return [

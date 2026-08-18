@@ -1,10 +1,9 @@
-"use client";
+﻿"use client";
 
-import { useState, useEffect } from "react";
+import { useRef, useState, useEffect } from "react";
 import { Upload, Search, Grid3x3, List, Video, Folder, MoreHorizontal, Plus, X, ExternalLink, Download, Check, Loader2 } from "lucide-react";
 import { Topbar } from "@/components/layout/Topbar";
 import { useTeam } from "@/components/providers/TeamProvider";
-import { CldUploadWidget } from "next-cloudinary";
 
 function formatSize(bytes: number): string {
   if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
@@ -30,6 +29,7 @@ const ALL_FOLDER = "Todos";
 
 export default function MediaPage() {
   const { teamId } = useTeam();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [view, setView] = useState<"grid" | "list">("grid");
   const [selectedFolder, setSelectedFolder] = useState(ALL_FOLDER);
   const [searchQuery, setSearchQuery] = useState("");
@@ -47,17 +47,17 @@ export default function MediaPage() {
     setLoading(true);
     fetch(`/api/media/upload?teamId=${teamId}`)
       .then((r) => r.json())
-      .then((data: any[]) => {
-        setMediaList(
-          data.map((m) => ({
-            id: m.id,
-            name: m.name,
-            type: m.type,
-            size: m.size,
-            url: m.url,
-            publicId: m.publicId,
-            folder: m.folder || "Geral",
-            tags: m.tags || [],
+        .then((data: any[]) => {
+          setMediaList(
+            data.map((m) => ({
+              id: m.id,
+              name: m.name,
+              type: m.type,
+              size: m.size,
+              url: m.url || `/api/media/${m.id}/file?teamId=${teamId}`,
+              publicId: m.publicId,
+              folder: m.folder || "Geral",
+              tags: m.tags || [],
             width: m.width,
             height: m.height,
             createdAt: new Date(m.createdAt).toLocaleDateString("pt-BR"),
@@ -105,46 +105,6 @@ export default function MediaPage() {
     }
   };
 
-  // Handle upload via Cloudinary widget — then persist to our API
-  const handleUploadSuccess = async (result: any) => {
-    if (result.event !== "success" || !teamId) return;
-    const info = result.info;
-
-    // Debug: log full info object so we can inspect what Cloudinary returns for Google Drive
-    console.log("[CLD UPLOAD SUCCESS] info:", JSON.stringify(info, null, 2));
-
-    const url = info?.secure_url || info?.url;
-    if (!url) {
-      console.error("[CLD UPLOAD] No URL returned from Cloudinary:", info);
-      return;
-    }
-
-    setUploading(true);
-    try {
-      // Build a safe filename: Google Drive uses display_name, local uses original_filename
-      const baseName = info.display_name || info.original_filename || info.public_id?.split("/").pop() || "arquivo";
-      const ext = info.format ? `.${info.format}` : "";
-      const safeName = baseName.includes(".") ? baseName : baseName + ext;
-
-      const newItem: MediaItem = {
-        id: info.public_id ?? String(Date.now()),
-        name: safeName,
-        type: info.resource_type === "video" ? "VIDEO" : "IMAGE",
-        size: info.bytes ?? 0,
-        url,
-        publicId: info.public_id,
-        folder: selectedFolder === ALL_FOLDER ? "Geral" : selectedFolder,
-        tags: Array.isArray(info.tags) ? info.tags : [],
-        width: info.width,
-        height: info.height,
-        createdAt: new Date().toLocaleDateString("pt-BR"),
-      };
-      setMediaList((prev) => [newItem, ...prev]);
-    } finally {
-      setUploading(false);
-    }
-  };
-
   const totalSize = mediaList.reduce((acc, m) => acc + m.size, 0);
 
   return (
@@ -158,29 +118,71 @@ export default function MediaPage() {
         {/* Left sidebar */}
         <div style={{ display: "flex", flexDirection: "column", gap: "4px", position: "sticky", top: "88px" }}>
           {/* Upload Button */}
-          <CldUploadWidget
-            uploadPreset={process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || "marklabs_unsigned"}
-            options={{ sources: ["local", "google_drive", "url"], multiple: true, resourceType: "image", folder: `marklabs/${teamId}/${selectedFolder === ALL_FOLDER ? "Geral" : selectedFolder}` }}
-            onSuccess={handleUploadSuccess}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm"
+            hidden
+            onChange={async (e) => {
+              const files = e.target.files;
+              if (!files || !teamId) return;
+              setUploading(true);
+              try {
+                for (const file of Array.from(files)) {
+                  const folder = selectedFolder === ALL_FOLDER ? "Geral" : selectedFolder;
+                  const fallbackForm = new FormData();
+                  fallbackForm.append("teamId", teamId);
+                  fallbackForm.append("file", file);
+                  fallbackForm.append("folder", folder);
+                  fallbackForm.append("tags", "");
+
+                  const finalizeRes = await fetch("/api/media/upload", {
+                    method: "POST",
+                    body: fallbackForm,
+                  });
+
+                  if (!finalizeRes.ok) {
+                    const err = await finalizeRes.json().catch(() => ({}));
+                    throw new Error(err.error || "Arquivo enviado, mas falhou ao salvar a m�dia.");
+                  }
+
+                  const media = await finalizeRes.json();
+                  setMediaList((prev) => [{
+                    id: media.id,
+                    name: media.name,
+                    type: media.type,
+                    size: media.size,
+                    url: media.url,
+                    publicId: media.publicId,
+                    folder: media.folder || "Geral",
+                    tags: media.tags || [],
+                    width: media.width,
+                    height: media.height,
+                    createdAt: new Date(media.createdAt).toLocaleDateString("pt-BR"),
+                  }, ...prev]);
+                }
+              } finally {
+                setUploading(false);
+                e.target.value = "";
+              }
+            }}
+          />
+          <button
+            id="upload-media-btn"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center", gap: "7px",
+              padding: "10px", background: uploading ? "rgba(234,88,12,0.5)" : "linear-gradient(135deg, #ea580c, #c2410c)",
+              border: "none", borderRadius: "10px", color: "#fff", fontSize: "13px", fontWeight: 600,
+              cursor: uploading ? "not-allowed" : "pointer", boxShadow: "0 0 12px rgba(234,88,12,0.3)",
+              marginBottom: "12px", transition: "all 0.2s ease",
+            }}
           >
-            {({ open }) => (
-              <button
-                id="upload-media-btn"
-                onClick={() => open()}
-                disabled={uploading}
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "center", gap: "7px",
-                  padding: "10px", background: uploading ? "rgba(234,88,12,0.5)" : "linear-gradient(135deg, #ea580c, #c2410c)",
-                  border: "none", borderRadius: "10px", color: "#fff", fontSize: "13px", fontWeight: 600,
-                  cursor: uploading ? "not-allowed" : "pointer", boxShadow: "0 0 12px rgba(234,88,12,0.3)",
-                  marginBottom: "12px", transition: "all 0.2s ease",
-                }}
-              >
-                {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                {uploading ? "Enviando..." : "Upload / Drive"}
-              </button>
-            )}
-          </CldUploadWidget>
+            {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+            {uploading ? "Enviando..." : "Upload R2"}
+          </button>
 
           {/* Stats */}
           <div style={{ padding: "10px", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "10px", marginBottom: "12px" }}>
@@ -283,9 +285,9 @@ export default function MediaPage() {
           >
             <Upload size={20} style={{ color: isDragging ? "#fb923c" : "var(--text-muted)", margin: "0 auto 8px" }} />
             <p style={{ fontSize: "13px", color: isDragging ? "#fb923c" : "var(--text-muted)", fontWeight: isDragging ? 600 : 400 }}>
-              {isDragging ? "Solte os arquivos aqui!" : "Arraste arquivos ou clique em \"Upload / Drive\""}
+              {isDragging ? "Solte os arquivos aqui!" : "Arraste arquivos ou clique em \"Upload R2\""}
             </p>
-            <p style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "4px" }}>PNG, JPG, GIF, MP4 — máx. 20MB · Google Drive suportado</p>
+            <p style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "4px" }}>PNG, JPG, GIF, MP4 — máx. 50MB</p>
           </div>
 
           {/* Loading */}
@@ -301,7 +303,7 @@ export default function MediaPage() {
             <div style={{ textAlign: "center", padding: "60px 16px", border: "1px dashed var(--border-light)", borderRadius: "14px" }}>
               <p style={{ fontSize: "28px", marginBottom: "12px" }}>🖼️</p>
               <p style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "6px" }}>Nenhuma mídia encontrada</p>
-              <p style={{ fontSize: "13px", color: "var(--text-muted)" }}>Clique em "Upload / Drive" para adicionar suas primeiras imagens</p>
+              <p style={{ fontSize: "13px", color: "var(--text-muted)" }}>Clique em "Upload R2" para adicionar suas primeiras imagens</p>
             </div>
           )}
 
@@ -491,3 +493,4 @@ export default function MediaPage() {
     </>
   );
 }
+

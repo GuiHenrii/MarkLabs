@@ -1,5 +1,5 @@
 import { Platform } from "@marklabs/database";
-import { AnalyticsSnapshot, PublishResult, SocialProvider } from "./index";
+import { AnalyticsSnapshot, PublishInput, PublishResult, SocialProvider } from "./index";
 
 export class LinkedInProvider implements SocialProvider {
   platform = Platform.LINKEDIN;
@@ -49,7 +49,7 @@ export class LinkedInProvider implements SocialProvider {
     };
   }
 
-  async publish(accessToken: string, platformId: string, content: string, mediaUrls?: string[]): Promise<PublishResult> {
+  async publish(accessToken: string, platformId: string, input: PublishInput): Promise<PublishResult> {
     const response = await fetch("https://api.linkedin.com/v2/ugcPosts", {
       method: "POST",
       headers: {
@@ -61,7 +61,7 @@ export class LinkedInProvider implements SocialProvider {
         lifecycleState: "PUBLISHED",
         specificContent: {
           "com.linkedin.ugc.ShareContent": {
-            shareCommentary: { text: content },
+            shareCommentary: { text: input.content },
             shareMediaCategory: "NONE",
           },
         },

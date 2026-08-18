@@ -10,6 +10,8 @@ export default auth((req) => {
     "/login",
     "/api/auth",
     "/api/debug",
+    "/api/media/upload",
+    "/api/media/upload-url",
     "/forgot-password",
     "/reset-password",
   ];

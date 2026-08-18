@@ -1,7 +1,18 @@
 import { NextResponse } from "next/server";
-import { prisma, PostStatus, OutboxStatus } from "@marklabs/database";
+import { prisma, PostStatus } from "@marklabs/database";
 import { apiErrorResponse, requireTeamAccess } from "@/lib/authorization";
 import { z } from "zod";
+
+function isMediaUrl(value: string) {
+  if (!value.trim()) return false;
+  if (value.startsWith("/api/media/")) return true;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -12,8 +23,9 @@ export async function POST(request: Request) {
       content: z.string().min(1, "Conteúdo é obrigatório").max(63206, "Conteúdo excede o limite permitido"),
       scheduledAt: z.string().nullable().optional(),
       isPublishNow: z.boolean().optional(),
+      postType: z.enum(["POST", "REEL", "STORY", "CAROUSEL"]).optional(),
       media: z.array(z.object({
-        url: z.string().url("URL de mídia inválida"),
+        url: z.string().refine(isMediaUrl, "URL de mídia inválida"),
         type: z.enum(["IMAGE", "VIDEO"]),
         order: z.number().optional(),
       })).optional(),
@@ -22,7 +34,7 @@ export async function POST(request: Request) {
     if (!validation.success) {
       return NextResponse.json({ error: validation.error.issues[0].message }, { status: 400 });
     }
-    const { teamId, socialAccountId, content, scheduledAt, isPublishNow, media } = validation.data;
+    const { teamId, socialAccountId, content, scheduledAt, isPublishNow, media, postType } = validation.data;
     const { userId } = await requireTeamAccess(teamId, isPublishNow ? "posts:publish" : "posts:create");
     const account = await prisma.socialAccount.findFirst({ where: { id: socialAccountId, teamId, isActive: true }, select: { id: true } });
     if (!account) return NextResponse.json({ error: "Conta social não encontrada nesta equipe." }, { status: 400 });
@@ -33,24 +45,27 @@ export async function POST(request: Request) {
     const result = await prisma.$transaction(async (tx) => {
       const post = await tx.post.create({
         data: {
-          teamId, authorId: userId, socialAccountId, content: content.trim(),
-          status: isPublishNow || publishAt ? PostStatus.SCHEDULED : PostStatus.DRAFT,
+          teamId,
+          authorId: userId,
+          socialAccountId,
+          content: content.trim(),
+          postType: postType ? (postType as any) : "POST",
+          status: publishAt ? PostStatus.SCHEDULED : PostStatus.DRAFT,
           scheduledAt: publishAt,
-          ...(media && Array.isArray(media) && media.length > 0 ? {
-            media: {
-              create: media.map((m: any, idx: number) => ({
-                url: m.url,
-                type: m.type === "VIDEO" ? "VIDEO" : "IMAGE",
-                order: typeof m.order === "number" ? m.order : idx,
-              })),
-            },
-          } : {}),
-        },
+          ...(media && Array.isArray(media) && media.length > 0
+            ? {
+                media: {
+                  create: media.map((m: any, idx: number) => ({
+                    url: m.url,
+                    type: m.type === "VIDEO" ? "VIDEO" : "IMAGE",
+                    order: typeof m.order === "number" ? m.order : idx,
+                  })),
+                },
+              }
+            : {}),
+        } as any,
       });
-      const outbox = isPublishNow ? await tx.outboxMessage.create({
-        data: { eventType: "PUBLISH_POST", payload: { postId: post.id, teamId }, status: OutboxStatus.PENDING },
-      }) : null;
-      return { post, outbox };
+      return { post };
     });
 
     if (isPublishNow) {

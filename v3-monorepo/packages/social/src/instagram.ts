@@ -1,5 +1,5 @@
 import { Platform } from "@marklabs/database";
-import { AnalyticsSnapshot, PublishResult, SocialProvider } from "./index";
+import { AnalyticsSnapshot, PublishInput, PublishResult, SocialProvider } from "./index";
 
 const GRAPH_API = "https://graph.facebook.com/v20.0";
 
@@ -16,13 +16,11 @@ export class InstagramProvider implements SocialProvider {
   constructor(private readonly clientId: string, private readonly clientSecret: string) {}
 
   getAuthUrl(redirectUri: string, state: string) {
-    // Escopos básicos e necessários para Instagram Business via Facebook Login
-    // Removendo instagram_content_publish e instagram_manage_insights se estiverem causando erro em modo dev
     return `https://www.facebook.com/v20.0/dialog/oauth?${new URLSearchParams({
       client_id: this.clientId,
       redirect_uri: redirectUri,
       state,
-      scope: "instagram_basic,pages_show_list,pages_read_engagement,business_management",
+      scope: "instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement,pages_manage_metadata,business_management",
       response_type: "code",
       auth_type: "rerequest",
       return_scopes: "true",
@@ -207,42 +205,96 @@ export class InstagramProvider implements SocialProvider {
     };
   }
 
-  async publish(accessToken: string, platformId: string, content: string, mediaUrls?: string[]): Promise<PublishResult> {
-    if (!mediaUrls?.length) {
+  async publish(accessToken: string, platformId: string, input: PublishInput): Promise<PublishResult> {
+    const mediaUrls = input.media ?? [];
+    const content = input.content;
+    const postType = input.postType ?? "POST";
+
+    if (!mediaUrls.length) {
       return { success: false, error: "O Instagram exige pelo menos uma imagem ou vídeo." };
     }
 
+    if (postType === "STORY" && mediaUrls.length !== 1) {
+      return { success: false, error: "Story aceita apenas uma mídia por publicação." };
+    }
+
+    if (postType === "REEL" && mediaUrls.length !== 1) {
+      return { success: false, error: "Reel aceita apenas um vídeo por publicação." };
+    }
+
+    if (postType === "CAROUSEL" && mediaUrls.length < 2) {
+      return { success: false, error: "Carrossel precisa de pelo menos 2 mídias." };
+    }
+
     try {
-      // 1. Criar container de mídia
+      const isVideo = mediaUrls[0]?.type === "VIDEO";
       const params = new URLSearchParams();
-      if (mediaUrls[0]) params.append("image_url", mediaUrls[0]);
       params.append("caption", content);
       params.append("access_token", accessToken);
 
-      const containerResponse = await fetch(`${GRAPH_API}/${platformId}/media`, {
-        method: "POST",
-        body: params,
-      });
-
-      if (!containerResponse.ok) {
-        const error = await containerResponse.json();
-        return { success: false, error: error.error?.message || "Falha ao criar container de mídia no Instagram." };
+      if (postType === "STORY") {
+        params.append("media_type", "STORIES");
+        if (isVideo) {
+          params.append("video_url", mediaUrls[0]!.url);
+        } else {
+          params.append("image_url", mediaUrls[0]!.url);
+        }
+      } else if (postType === "REEL" || isVideo) {
+        params.append("media_type", "REELS");
+        params.append("video_url", mediaUrls[0]!.url);
+        params.append("share_to_feed", "true");
+      } else if (mediaUrls.length > 1) {
+        params.append("media_type", "CAROUSEL");
+      } else {
+        params.append("image_url", mediaUrls[0]!.url);
       }
 
-      const { id: creationId } = await containerResponse.json() as { id: string };
+      if (postType === "CAROUSEL" || mediaUrls.length > 1) {
+        const children: string[] = [];
+        for (const [index, media] of mediaUrls.entries()) {
+          const childParams = new URLSearchParams({
+            access_token: accessToken,
+            caption: index === 0 ? content : "",
+          });
+          if (media.type === "VIDEO") childParams.set("video_url", media.url);
+          else childParams.set("image_url", media.url);
+          const childResponse = await fetch(`${GRAPH_API}/${platformId}/media`, { method: "POST", body: childParams });
+          if (!childResponse.ok) {
+            const error = await childResponse.json().catch(() => ({}));
+            return { success: false, error: error?.error?.message || "Falha ao criar container filho no Instagram." };
+          }
+          const childData = await childResponse.json() as { id: string };
+          children.push(childData.id);
+        }
+        const parentParams = new URLSearchParams({ access_token: accessToken, caption: content, media_type: "CAROUSEL" });
+        children.forEach((id) => parentParams.append("children", id));
+        const parentResponse = await fetch(`${GRAPH_API}/${platformId}/media`, { method: "POST", body: parentParams });
+        if (!parentResponse.ok) {
+          const error = await parentResponse.json().catch(() => ({}));
+          return { success: false, error: error?.error?.message || "Falha ao criar carrossel no Instagram." };
+        }
+        const parentData = await parentResponse.json() as { id: string };
+        const publishResponse = await fetch(`${GRAPH_API}/${platformId}/media_publish`, {
+          method: "POST",
+          body: new URLSearchParams({ creation_id: parentData.id, access_token: accessToken }),
+        });
+        if (!publishResponse.ok) return { success: false, error: "Falha ao publicar carrossel no Instagram." };
+        const published = await publishResponse.json() as { id: string };
+        return { success: true, providerPostId: published.id };
+      }
 
-      // 2. Publicar o container
+      const containerResponse = await fetch(`${GRAPH_API}/${platformId}/media`, { method: "POST", body: params });
+      if (!containerResponse.ok) {
+        const error = await containerResponse.json().catch(() => ({}));
+        return { success: false, error: error?.error?.message || "Falha ao criar container de mídia no Instagram." };
+      }
+      const { id: creationId } = await containerResponse.json() as { id: string };
       const publishResponse = await fetch(`${GRAPH_API}/${platformId}/media_publish`, {
         method: "POST",
-        body: new URLSearchParams({
-          creation_id: creationId,
-          access_token: accessToken,
-        }),
+        body: new URLSearchParams({ creation_id: creationId, access_token: accessToken }),
       });
-
       if (!publishResponse.ok) return { success: false, error: "Falha ao publicar no Instagram." };
       const data = await publishResponse.json() as { id: string };
-
       return { success: true, providerPostId: data.id };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : "Erro desconhecido ao publicar no Instagram." };

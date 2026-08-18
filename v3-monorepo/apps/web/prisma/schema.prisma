@@ -151,7 +151,7 @@ model MediaFile {
   teamId    String
   name      String
   url       String
-  publicId  String    // Cloudinary public_id
+  publicId  String    // Object key in Cloudflare R2
   type      MediaType
   size      Int
   width     Int?

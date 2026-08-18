@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@marklabs/database";
+import { deleteFromR2 } from "@/lib/r2";
 import { apiErrorResponse, requireTeamAccess } from "@/lib/authorization";
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -10,14 +11,16 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   const { id } = await params;
 
   try {
-    await requireTeamAccess(teamId, "settings:manage"); // Ou outra permissão de mídia
-    
-    // Deleta o registro do banco
+    await requireTeamAccess(teamId, "settings:manage");
+    const media = await prisma.mediaFile.findFirst({ where: { id, teamId } });
+    if (!media) return NextResponse.json({ error: "Mídia não encontrada." }, { status: 404 });
+
+    await deleteFromR2(media.publicId);
+
     await prisma.mediaFile.delete({
       where: {
-        id: id,
-        teamId: teamId
-      }
+        id,
+      },
     });
 
     return NextResponse.json({ success: true });

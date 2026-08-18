@@ -1,0 +1,9 @@
+DO $$
+BEGIN
+  CREATE TYPE "PostType" AS ENUM ('POST', 'REEL', 'STORY', 'CAROUSEL');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+ALTER TABLE "Post"
+  ADD COLUMN IF NOT EXISTS "postType" "PostType" NOT NULL DEFAULT 'POST';

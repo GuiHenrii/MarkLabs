@@ -1,10 +1,10 @@
-"use client";
+﻿"use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Image as ImageIcon, Video, Smile, Hash, AtSign, MapPin,
   Clock, Send, Save, ChevronDown, X, Plus, Eye,
-  Camera, Video as VideoIcon, Briefcase, Globe
+  Camera, Video as VideoIcon, Briefcase, Globe, Sparkles, RectangleHorizontal, Square, Clapperboard
 } from "lucide-react";
 import Link from "next/link";
 import { Topbar } from "@/components/layout/Topbar";
@@ -33,17 +33,185 @@ const characterLimits: Record<string, number> = {
   YOUTUBE: 5000,
 };
 
+const postTypes = [
+  { id: "POST", label: "Post", description: "Imagem, vídeo ou carrossel para o feed.", icon: Square },
+  { id: "REEL", label: "Reel", description: "Conteúdo vertical com foco em alcance.", icon: Clapperboard },
+  { id: "STORY", label: "Story", description: "Conteúdo rápido e efêmero para stories.", icon: Sparkles },
+  { id: "CAROUSEL", label: "Carrossel", description: "Sequência de várias mídias no mesmo post.", icon: RectangleHorizontal },
+] as const;
+
+type MediaItem = { url: string; type: "IMAGE" | "VIDEO"; width?: number; height?: number; order?: number };
+
+type MediaCheck = { status: "compatible" | "incompatible" | "unknown"; message: string };
+
+function getTargetAspectRatio(postType: string) {
+  if (postType === "REEL" || postType === "STORY") return 9 / 16;
+  if (postType === "CAROUSEL") return 1;
+  return 4 / 5;
+}
+
+async function loadImageElement(file: File) {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    return await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("Não foi possível ler a imagem selecionada."));
+      img.src = objectUrl;
+    });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+async function adjustImageToBestAspectRatio(file: File, postType: string) {
+  if (!file.type.startsWith("image/")) return file;
+
+  const targetRatio = getTargetAspectRatio(postType);
+  const image = await loadImageElement(file);
+  const sourceRatio = image.naturalWidth / image.naturalHeight;
+
+  if (Math.abs(sourceRatio - targetRatio) < 0.02) return file;
+
+  const canvas = document.createElement("canvas");
+  let sourceX = 0;
+  let sourceY = 0;
+  let sourceWidth = image.naturalWidth;
+  let sourceHeight = image.naturalHeight;
+
+  if (sourceRatio > targetRatio) {
+    sourceWidth = Math.round(image.naturalHeight * targetRatio);
+    sourceX = Math.round((image.naturalWidth - sourceWidth) / 2);
+  } else {
+    sourceHeight = Math.round(image.naturalWidth / targetRatio);
+    sourceY = Math.round((image.naturalHeight - sourceHeight) / 2);
+  }
+
+  canvas.width = sourceWidth;
+  canvas.height = sourceHeight;
+
+  const context = canvas.getContext("2d");
+  if (!context) return file;
+
+  context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, sourceWidth, sourceHeight);
+
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, file.type || "image/jpeg", 0.92));
+  if (!blob) return file;
+
+  const baseName = file.name.replace(/\.[^.]+$/, "");
+  const extension = file.name.includes(".") ? file.name.split(".").pop() : "jpg";
+  return new File([blob], `${baseName}-${postType.toLowerCase()}-${sourceWidth}x${sourceHeight}.${extension}`, {
+    type: file.type || "image/jpeg",
+    lastModified: Date.now(),
+  });
+}
+
+function getImageDimensions(url: string) {
+  return new Promise<{ width: number; height: number }>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onerror = () => reject(new Error("Não foi possível ler a imagem selecionada."));
+    img.src = url;
+  });
+}
+
+function getVideoDimensions(url: string) {
+  return new Promise<{ width: number; height: number }>((resolve, reject) => {
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.onloadedmetadata = () => resolve({ width: video.videoWidth, height: video.videoHeight });
+    video.onerror = () => reject(new Error("Não foi possível ler o vídeo selecionado."));
+    video.src = url;
+  });
+}
+
+async function validateInstagramMedia(postType: string, media: MediaItem[]) {
+  if (!media.length) return null;
+  const first = media[0];
+  const isVideo = first.type === "VIDEO";
+  const { width, height } = isVideo ? await getVideoDimensions(first.url) : await getImageDimensions(first.url);
+  const ratio = width / height;
+
+  if (postType === "REEL") {
+    if (!isVideo) return "Reel precisa ser um vídeo.";
+    if (ratio < 0.56 || ratio > 0.58) return "Reel precisa estar em proporção vertical 9:16.";
+  }
+
+  if (postType === "STORY") {
+    if (ratio < 0.55 || ratio > 0.58) return "Story precisa estar em proporção vertical 9:16.";
+  }
+
+  if (postType === "POST") {
+    if (ratio < 0.8 || ratio > 1.95) return "Post do Instagram precisa estar entre 4:5, 1:1 ou 1.91:1.";
+  }
+
+  if (postType === "CAROUSEL" && media.length < 2) {
+    return "Carrossel precisa de pelo menos 2 mídias.";
+  }
+
+  return null;
+}
+
+function getMediaCheck(postType: string, media: MediaItem[]): MediaCheck {
+  if (!media.length) {
+    return { status: "unknown", message: "Adicione mídia para validar o formato." };
+  }
+
+  const first = media[0];
+  const ratio = first.width && first.height ? first.width / first.height : null;
+
+  if (postType === "REEL") {
+    if (first.type !== "VIDEO") return { status: "incompatible", message: "Reel precisa ser vídeo vertical 9:16." };
+    if (!ratio) return { status: "unknown", message: "Dimensões do vídeo ainda não foram lidas." };
+    return ratio >= 0.56 && ratio <= 0.58
+      ? { status: "compatible", message: "Reel compatível com 9:16." }
+      : { status: "incompatible", message: "Reel fora de 9:16." };
+  }
+
+  if (postType === "STORY") {
+    if (!ratio) return { status: "unknown", message: "Dimensões ainda não foram lidas." };
+    return ratio >= 0.55 && ratio <= 0.58
+      ? { status: "compatible", message: "Story compatível com 9:16." }
+      : { status: "incompatible", message: "Story fora de 9:16." };
+  }
+
+  if (postType === "POST") {
+    if (!ratio) return { status: "unknown", message: "Dimensões ainda não foram lidas." };
+    if (ratio >= 0.8 && ratio <= 1.0) return { status: "compatible", message: "Formato bom para feed quadrado/retrato." };
+    if (ratio >= 1.8 && ratio <= 2.0) return { status: "compatible", message: "Formato bom para feed paisagem." };
+    return { status: "incompatible", message: "Formato pode falhar no feed do Instagram." };
+  }
+
+  if (postType === "CAROUSEL") {
+    return media.length >= 2
+      ? { status: "compatible", message: "Carrossel pronto para publicação." }
+      : { status: "incompatible", message: "Carrossel precisa de pelo menos 2 mídias." };
+  }
+
+  return { status: "unknown", message: "Sem validação disponível." };
+}
+
+function moveMediaItem(items: MediaItem[], fromIndex: number, toIndex: number) {
+  if (toIndex < 0 || toIndex >= items.length) return items;
+  const next = [...items];
+  const [item] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, item);
+  return next.map((entry, index) => ({ ...entry, order: index }));
+}
+
 // ─── Platform Preview ─────────────────────────────────────────────────────────
 function PlatformPreview({
   platform,
   content,
   account,
   media = [],
+  postType = "POST",
 }: {
   platform: string;
   content: string;
   account: { id: string; platform: string; name: string; username?: string; avatar?: string } | undefined;
-  media?: { url: string; type: string }[];
+  media?: MediaItem[];
+  postType?: string;
 }) {
   const color = platformColors[platform] ?? "#ea580c";
 
@@ -134,7 +302,18 @@ function PlatformPreview({
         {media.length > 0 && (
           <div style={{ marginTop: "12px", borderRadius: "8px", overflow: "hidden", display: "grid", gridTemplateColumns: media.length === 1 ? "1fr" : "1fr 1fr", gap: "2px" }}>
             {media.map((m, idx) => (
-              <div key={idx} style={{ aspectRatio: media.length === 1 ? "16/9" : "1/1", background: "#000" }}>
+              <div
+                key={idx}
+                style={{
+                  aspectRatio:
+                    postType === "REEL" || postType === "STORY"
+                      ? "9/16"
+                      : media.length === 1
+                        ? "4/5"
+                        : "1/1",
+                  background: "#000",
+                }}
+              >
                 {m.type === "VIDEO" ? (
                   <video src={m.url} style={{ width: "100%", height: "100%", objectFit: "cover" }} controls />
                 ) : (
@@ -167,15 +346,16 @@ function PlatformPreview({
 }
 
 import { useTeam } from "@/components/providers/TeamProvider";
-import { CldUploadWidget } from "next-cloudinary";
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function ComposePage() {
   const { teamId } = useTeam();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [connectedAccounts, setConnectedAccounts] = useState<any[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
   const [content, setContent] = useState("");
-  const [media, setMedia] = useState<{ url: string; type: string }[]>([]);
+  const [media, setMedia] = useState<MediaItem[]>([]);
+  const [postType, setPostType] = useState<(typeof postTypes)[number]["id"]>("POST");
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   const [scheduleDate, setScheduleDate] = useState("");
   const [scheduleTime, setScheduleTime] = useState("");
@@ -183,7 +363,9 @@ export default function ComposePage() {
   const [previewPlatform, setPreviewPlatform] = useState<string | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [autoAdjustNotice, setAutoAdjustNotice] = useState<string | null>(null);
   const [activeToolbarMenu, setActiveToolbarMenu] = useState<string | null>(null);
+  const [mediaCheck, setMediaCheck] = useState<MediaCheck>({ status: "unknown", message: "Adicione mídia para validar o formato." });
 
   const toolbarData: Record<string, string[]> = {
     emoji: ["😀", "😂", "🥰", "😎", "🤔", "🔥", "✨", "🚀", "🎉", "👍"],
@@ -220,6 +402,16 @@ export default function ComposePage() {
     setMessage(null);
 
     try {
+      const targetAccount = selectedAccountsData[0];
+      if (!asDraft && targetAccount?.platform === "INSTAGRAM") {
+        const validationError = await validateInstagramMedia(postType, media);
+        if (validationError) {
+          setMessage({ type: "error", text: validationError });
+          setIsPublishing(false);
+          return;
+        }
+      }
+
       const res = await fetch("/api/posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -227,6 +419,7 @@ export default function ComposePage() {
           teamId,
           socialAccountId: selectedAccounts[0],
           content,
+          postType,
           media,
           isPublishNow: asDraft ? false : !isScheduling,
           scheduledAt: (!asDraft && isScheduling && scheduleDate) ? `${scheduleDate}T${scheduleTime || "12:00"}:00Z` : null,
@@ -241,6 +434,28 @@ export default function ComposePage() {
       setMessage({ type: "success", text: asDraft ? "Rascunho salvo com sucesso! 📝" : isScheduling ? "Post agendado com sucesso! 🎉" : "Post publicado e enviado para a fila! 🚀" });
       setContent("");
       setMedia([]);
+      setPostType("POST");
+    } catch (err: any) {
+      setMessage({ type: "error", text: err.message });
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
+  const handleTestPublish = async () => {
+    if (!selectedAccountsData.length || !content.trim()) return;
+    setIsPublishing(true);
+    setMessage(null);
+    try {
+      const targetAccount = selectedAccountsData[0];
+      if (targetAccount?.platform === "INSTAGRAM") {
+        const validationError = await validateInstagramMedia(postType, media);
+        if (validationError) {
+          setMessage({ type: "error", text: validationError });
+          return;
+        }
+      }
+      setMessage({ type: "success", text: "Validação concluída. O post está pronto para enviar." });
     } catch (err: any) {
       setMessage({ type: "error", text: err.message });
     } finally {
@@ -257,6 +472,7 @@ export default function ComposePage() {
   const selectedAccountsData = connectedAccounts.filter((a) =>
     selectedAccounts.includes(a.id)
   );
+  const selectedPlatform = selectedAccountsData[0]?.platform ?? "INSTAGRAM";
 
   const activePreviewAccount = selectedAccountsData.find(
     (a) => a.platform === previewPlatform
@@ -270,6 +486,33 @@ export default function ComposePage() {
   const charPercent = Math.min((content.length / limit) * 100, 100);
   const charColor = charPercent > 90 ? "#ef4444" : charPercent > 75 ? "#f59e0b" : "#10b981";
 
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (selectedPlatform !== "INSTAGRAM") {
+        setMediaCheck({ status: "unknown", message: "Validação específica do Instagram disponível quando uma conta IG estiver selecionada." });
+        return;
+      }
+      if (!media.length) {
+        setMediaCheck({ status: "unknown", message: "Adicione mídia para validar o formato." });
+        return;
+      }
+      const first = media[0];
+      if (!first.width || !first.height) {
+        const dims = first.type === "VIDEO" ? await getVideoDimensions(first.url) : await getImageDimensions(first.url);
+        if (!alive) return;
+        setMedia((prev) => prev.map((item, index) => index === 0 ? { ...item, ...dims } : item));
+      }
+      if (!alive) return;
+      const check = getMediaCheck(postType, media);
+      setMediaCheck(check);
+    })().catch((error) => {
+      if (!alive) return;
+      setMediaCheck({ status: "unknown", message: error instanceof Error ? error.message : "Não foi possível validar a mídia." });
+    });
+    return () => { alive = false; };
+  }, [media, postType, selectedPlatform]);
+
   return (
     <>
       <Topbar title="Criar Post" subtitle="Crie e agende posts para suas redes sociais" />
@@ -278,10 +521,11 @@ export default function ComposePage() {
         style={{
           padding: "24px",
           display: "grid",
-          gridTemplateColumns: "1fr 360px",
+          gridTemplateColumns: "minmax(0, 1.4fr) minmax(320px, 0.8fr)",
           gap: "20px",
           flex: 1,
           alignItems: "start",
+          background: "linear-gradient(180deg, rgba(234,88,12,0.04), transparent 25%)",
         }}
         className="animate-fade-in"
       >
@@ -290,10 +534,11 @@ export default function ComposePage() {
           {/* Account Selection */}
           <div
             style={{
-              background: "var(--bg-card)",
+              background: "linear-gradient(180deg, rgba(255,255,255,0.02), transparent 100%), var(--bg-card)",
               border: "1px solid var(--border)",
-              borderRadius: "14px",
+              borderRadius: "18px",
               padding: "20px",
+              boxShadow: "0 18px 40px rgba(0,0,0,0.14)",
             }}
           >
             <h2 style={{ fontSize: "14px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "14px" }}>
@@ -384,21 +629,76 @@ export default function ComposePage() {
           {/* Content Editor */}
           <div
             style={{
-              background: "var(--bg-card)",
+              background: "linear-gradient(180deg, rgba(255,255,255,0.02), transparent 100%), var(--bg-card)",
               border: "1px solid var(--border)",
-              borderRadius: "14px",
+              borderRadius: "18px",
               padding: "20px",
               display: "flex",
               flexDirection: "column",
               gap: "14px",
+              boxShadow: "0 18px 40px rgba(0,0,0,0.14)",
             }}
           >
             <h2 style={{ fontSize: "14px", fontWeight: 700, color: "var(--text-primary)" }}>
               Conteúdo
             </h2>
 
-            <textarea
-              id="post-content"
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "10px" }}>
+              {postTypes.map((type) => {
+                const active = postType === type.id;
+                const Icon = type.icon;
+                return (
+                  <button
+                    key={type.id}
+                    onClick={() => setPostType(type.id)}
+                    style={{
+                      textAlign: "left",
+                      padding: "14px",
+                      borderRadius: "14px",
+                      border: active ? "1px solid rgba(234,88,12,0.45)" : "1px solid var(--border)",
+                      background: active ? "linear-gradient(180deg, rgba(234,88,12,0.14), rgba(234,88,12,0.06))" : "var(--bg-secondary)",
+                      cursor: "pointer",
+                      color: "inherit",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
+                      <Icon size={16} style={{ color: active ? "#fb923c" : "var(--text-muted)" }} />
+                      <span style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", color: active ? "#fb923c" : "var(--text-muted)", fontWeight: 700 }}>
+                        {active ? "Selecionado" : "Formato"}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "4px" }}>{type.label}</div>
+                    <div style={{ fontSize: "12px", color: "var(--text-muted)", lineHeight: 1.5 }}>{type.description}</div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {selectedPlatform === "INSTAGRAM" && (
+              <div
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: "10px",
+                  border: `1px solid ${mediaCheck.status === "compatible" ? "rgba(16,185,129,0.28)" : mediaCheck.status === "incompatible" ? "rgba(239,68,68,0.28)" : "var(--border)"}`,
+                  background: mediaCheck.status === "compatible" ? "rgba(16,185,129,0.08)" : mediaCheck.status === "incompatible" ? "rgba(239,68,68,0.08)" : "var(--bg-secondary)",
+                  color: "var(--text-secondary)",
+                  fontSize: "12px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "12px",
+                }}
+              >
+                <span>{mediaCheck.message}</span>
+                <span style={{ fontWeight: 700, color: mediaCheck.status === "compatible" ? "#10b981" : mediaCheck.status === "incompatible" ? "#ef4444" : "var(--text-muted)" }}>
+                  {mediaCheck.status === "compatible" ? "Compatível" : mediaCheck.status === "incompatible" ? "Incompatível" : "Aguardando"}
+                </span>
+              </div>
+            )}
+
+              <textarea
+                id="post-content"
               value={content}
               onChange={(e) => setContent(e.target.value)}
               placeholder="Escreva seu post aqui... Use # para hashtags e @ para mencionar pessoas."
@@ -419,18 +719,45 @@ export default function ComposePage() {
               }}
             />
 
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                Formato atual: <span style={{ color: "#fb923c", fontWeight: 700 }}>{postTypes.find((t) => t.id === postType)?.label}</span>
+              </div>
+              <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                {media.length} mídia(s) anexada(s)
+              </div>
+            </div>
+
             {/* Media Preview */}
             {media.length > 0 && (
               <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                 {media.map((m, idx) => (
-                  <div key={idx} style={{ position: "relative", width: "80px", height: "80px", borderRadius: "8px", overflow: "hidden", border: "1px solid var(--border)" }}>
+                  <div key={`${m.url}-${idx}`} style={{ position: "relative", width: "80px", height: "80px", borderRadius: "8px", overflow: "hidden", border: `1px solid ${mediaCheck.status === "compatible" ? "rgba(16,185,129,0.45)" : mediaCheck.status === "incompatible" ? "rgba(239,68,68,0.45)" : "var(--border)"}` }}>
                     {m.type === "VIDEO" ? (
                       <video src={m.url} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                     ) : (
                       <img src={m.url} alt="upload" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                     )}
+                    <div style={{ position: "absolute", inset: "auto 4px 4px 4px", display: "flex", justifyContent: "space-between", gap: "4px" }}>
+                      <button
+                        onClick={() => setMedia((prev) => moveMediaItem(prev, idx, idx - 1))}
+                        disabled={idx === 0}
+                        style={{ width: "20px", height: "20px", borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.55)", color: "white", cursor: idx === 0 ? "not-allowed" : "pointer" }}
+                        title="Mover para cima"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        onClick={() => setMedia((prev) => moveMediaItem(prev, idx, idx + 1))}
+                        disabled={idx === media.length - 1}
+                        style={{ width: "20px", height: "20px", borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.55)", color: "white", cursor: idx === media.length - 1 ? "not-allowed" : "pointer" }}
+                        title="Mover para baixo"
+                      >
+                        ↓
+                      </button>
+                    </div>
                     <button
-                      onClick={() => setMedia(prev => prev.filter((_, i) => i !== idx))}
+                      onClick={() => setMedia((prev) => prev.filter((_, i) => i !== idx).map((entry, order) => ({ ...entry, order })))}
                       style={{ position: "absolute", top: "4px", right: "4px", background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: "20px", height: "20px", display: "flex", alignItems: "center", justifyContent: "center", color: "white", cursor: "pointer" }}
                     >
                       <X size={12} />
@@ -443,39 +770,67 @@ export default function ComposePage() {
             {/* Toolbar */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ display: "flex", gap: "4px" }}>
-                <CldUploadWidget
-                  uploadPreset={process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || "marklabs_unsigned"}
-                  options={{ sources: ["local", "google_drive", "url"], multiple: true, resourceType: "image" }}
-                  onSuccess={(result: any) => {
-                    if (result.event === "success") {
-                      const info = result.info;
-                      const url = info.secure_url || info.url;
-                      if (!url) return;
-                      setMedia((prev) => [
-                        ...prev,
-                        {
-                          url,
-                          type: info.resource_type === "video" ? "VIDEO" : "IMAGE",
-                        },
-                      ]);
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm"
+                  hidden
+                  onChange={async (e) => {
+                      const files = e.target.files;
+                      if (!files || !teamId) return;
+
+                      try {
+                        for (const file of Array.from(files)) {
+                          const preparedFile = await adjustImageToBestAspectRatio(file, postType);
+                          if (preparedFile !== file) {
+                            setAutoAdjustNotice(`Imagem ajustada automaticamente para ${postType === "REEL" || postType === "STORY" ? "9:16" : postType === "CAROUSEL" ? "1:1" : "4:5"}.`);
+                          }
+                          const form = new FormData();
+                          form.append("teamId", teamId);
+                          form.append("file", preparedFile);
+                          form.append("folder", "Geral");
+                          form.append("tags", "");
+
+                          const res = await fetch("/api/media/upload", {
+                            method: "POST",
+                            body: form,
+                          });
+
+                          if (!res.ok) {
+                            const err = await res.json().catch(() => ({}));
+                            throw new Error(err.error || "Falha ao enviar o arquivo pelo servidor.");
+                          }
+
+                          const mediaItem = await res.json();
+                          setMedia((prev) => [
+                            ...prev,
+                            {
+                              url: mediaItem.url,
+                              type: mediaItem.type,
+                              width: mediaItem.width ?? undefined,
+                              height: mediaItem.height ?? undefined,
+                              order: prev.length,
+                            },
+                          ]);
+                        }
+                    } finally {
+                      e.target.value = "";
                     }
                   }}
+                />
+                <button
+                  id="add-media-btn"
+                  title="Adicionar Mídia"
+                  onClick={(e) => { e.preventDefault(); fileInputRef.current?.click(); }}
+                  style={{
+                    width: "34px", height: "34px", display: "flex", alignItems: "center", justifyContent: "center",
+                    background: "var(--bg-secondary)", border: "1px solid var(--border)", borderRadius: "8px",
+                    cursor: "pointer", color: "var(--text-muted)", transition: "all 0.15s ease",
+                  }}
                 >
-                  {({ open }) => (
-                    <button
-                      id="add-media-btn"
-                      title="Adicionar Mídia (Local ou Google Drive)"
-                      onClick={(e) => { e.preventDefault(); open(); }}
-                      style={{
-                        width: "34px", height: "34px", display: "flex", alignItems: "center", justifyContent: "center",
-                        background: "var(--bg-secondary)", border: "1px solid var(--border)", borderRadius: "8px",
-                        cursor: "pointer", color: "var(--text-muted)", transition: "all 0.15s ease",
-                      }}
-                    >
-                      <ImageIcon size={15} />
-                    </button>
-                  )}
-                </CldUploadWidget>
+                  <ImageIcon size={15} />
+                </button>
 
                 {[
                   { icon: Smile, label: "Emojis", id: "emoji" },
@@ -589,10 +944,11 @@ export default function ComposePage() {
           {/* Schedule */}
           <div
             style={{
-              background: "var(--bg-card)",
+              background: "linear-gradient(180deg, rgba(255,255,255,0.02), transparent 100%), var(--bg-card)",
               border: "1px solid var(--border)",
-              borderRadius: "14px",
+              borderRadius: "18px",
               padding: "20px",
+              boxShadow: "0 18px 40px rgba(0,0,0,0.14)",
             }}
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
@@ -685,6 +1041,26 @@ export default function ComposePage() {
                 O post será publicado imediatamente ao clicar em "Publicar agora".
               </p>
             )}
+
+            <div style={{ marginTop: "14px", display: "grid", gap: "10px" }}>
+              {autoAdjustNotice && (
+                <div style={{ padding: "10px 12px", borderRadius: "12px", background: "rgba(14,165,233,0.10)", border: "1px solid rgba(14,165,233,0.22)", color: "#38bdf8", fontSize: "12px", fontWeight: 600 }}>
+                  {autoAdjustNotice}
+                </div>
+              )}
+              <div style={{ padding: "12px", borderRadius: "12px", background: "rgba(234,88,12,0.08)", border: "1px solid rgba(234,88,12,0.18)" }}>
+                <div style={{ fontSize: "12px", fontWeight: 700, color: "#fb923c", marginBottom: "4px" }}>Fluxo atual</div>
+                <div style={{ fontSize: "13px", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                  {postType === "STORY"
+                    ? "Story normalmente usa mídia única e tem janela curta de publicação."
+                    : postType === "REEL"
+                      ? "Reels prioriza vídeo vertical e pode ser entregue com compartilhamento no feed."
+                      : postType === "CAROUSEL"
+                        ? "Carrossel publica várias mídias na mesma peça."
+                        : "Post padrão suporta imagem, vídeo ou múltiplas mídias no feed."}
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Action Buttons */}
@@ -712,6 +1088,31 @@ export default function ComposePage() {
             >
               <Save size={15} />
               Salvar Rascunho
+            </button>
+
+            <button
+              id="test-publish-btn"
+              onClick={handleTestPublish}
+              disabled={selectedAccounts.length === 0 || !content.trim() || isPublishing}
+              style={{
+                flex: 1.2,
+                padding: "12px",
+                background: selectedAccounts.length === 0 || !content.trim() || isPublishing ? "var(--bg-secondary)" : "rgba(14,165,233,0.15)",
+                border: "1px solid rgba(14,165,233,0.25)",
+                borderRadius: "10px",
+                color: selectedAccounts.length === 0 || !content.trim() || isPublishing ? "var(--text-muted)" : "#38bdf8",
+                fontSize: "14px",
+                fontWeight: 600,
+                cursor: selectedAccounts.length === 0 || !content.trim() || isPublishing ? "not-allowed" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "7px",
+                transition: "all 0.15s ease",
+              }}
+            >
+              <Eye size={15} />
+              Publicação Teste
             </button>
 
             {message && (
@@ -820,6 +1221,9 @@ export default function ComposePage() {
                       account={account}
                       media={media}
                     />
+                    <div style={{ marginTop: "8px", fontSize: "11px", color: "var(--text-muted)" }}>
+                      Tipo: {postTypes.find((t) => t.id === postType)?.label} · {selectedPlatform}
+                    </div>
                   </div>
                 ))}
               </>

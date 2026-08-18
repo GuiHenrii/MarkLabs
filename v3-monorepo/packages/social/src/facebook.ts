@@ -1,5 +1,5 @@
 import { Platform } from "@marklabs/database";
-import { AnalyticsSnapshot, PublishResult, SocialProvider } from "./index";
+import { AnalyticsSnapshot, PublishInput, PublishResult, SocialProvider } from "./index";
 
 const GRAPH_API = "https://graph.facebook.com/v20.0";
 
@@ -59,12 +59,11 @@ export class FacebookProvider implements SocialProvider {
   }
 
   getAuthUrl(redirectUri: string, state: string) {
-    // Usando escopos mínimos para modo desenvolvimento
     return `https://www.facebook.com/v20.0/dialog/oauth?${new URLSearchParams({ 
       client_id: this.clientId, 
       redirect_uri: redirectUri, 
       state, 
-      scope: "pages_show_list,pages_read_engagement,pages_manage_metadata,business_management", 
+      scope: "pages_show_list,pages_read_engagement,pages_manage_metadata,pages_manage_posts,business_management", 
       response_type: "code",
       auth_type: "rerequest",
       return_scopes: "true",
@@ -146,9 +145,12 @@ export class FacebookProvider implements SocialProvider {
     return { accessToken: page.access_token, platformId: page.id, name: page.name, username: undefined, avatar: page.picture?.data?.url, tokenExpiry: token.expires_in ? new Date(Date.now() + token.expires_in * 1000) : undefined };
   }
 
-  async publish(accessToken: string, platformId: string, content: string, mediaUrls?: string[]): Promise<PublishResult> {
-    if (mediaUrls?.length) return { success: false, error: "Publicação de mídia no Facebook ainda não está habilitada." };
-    const response = await fetch(`${GRAPH_API}/${platformId}/feed`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ message: content, access_token: accessToken }) });
+  async publish(accessToken: string, platformId: string, input: PublishInput): Promise<PublishResult> {
+    const response = await fetch(`${GRAPH_API}/${platformId}/feed`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ message: input.content, access_token: accessToken }),
+    });
     if (!response.ok) return { success: false, error: "O Facebook recusou a publicação." };
     const data = await response.json() as { id?: string };
     return data.id ? { success: true, providerPostId: data.id } : { success: false, error: "Resposta inválida do Facebook." };

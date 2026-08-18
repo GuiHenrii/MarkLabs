@@ -1,36 +1,88 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MarkLabs Web
 
-## Getting Started
+Aplicação web principal do MarkLabs, construída com Next.js no monorepo.
 
-First, run the development server:
+## O que este app faz
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Autenticação e seleção de equipe.
+- Banco de mídias com upload direto para Cloudflare R2.
+- Compositor de posts com mídia, agendamento e pré-visualização.
+- Integração com contas sociais conectadas.
+- Publicação e agendamento de posts via API interna.
+
+## Fluxo de mídia
+
+O fluxo atual ficou assim:
+
+```text
+Frontend
+  ↓
+/api/media/upload
+  ↓
+Next.js processa e salva
+  ↓
+Cloudflare R2
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Também foi criada a rota de leitura proxy para servir a mídia pelo próprio app:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```text
+/api/media/[id]/file
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Ajuste automático de proporção
 
-## Learn More
+Quando uma imagem é enviada pelo compositor, o app tenta ajustar automaticamente a proporção conforme o tipo de post:
 
-To learn more about Next.js, take a look at the following resources:
+- `POST`: `4:5`
+- `REEL`: `9:16`
+- `STORY`: `9:16`
+- `CAROUSEL`: `1:1`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Se a imagem precisar ser recortada, a interface mostra um aviso informando que o ajuste foi feito automaticamente.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Publicação
 
-## Deploy on Vercel
+O botão `Publicar Agora` fica habilitado no composer e envia o post pela API interna.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Se for necessário bloquear publicação direta temporariamente, isso pode ser feito na rota:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- [`src/app/api/posts/route.ts`](./src/app/api/posts/route.ts)
+
+## Variáveis de ambiente
+
+As credenciais do R2 usadas atualmente no app são estas:
+
+- `CLOUDFLARE_ACCOUNT_ID`
+- `CLOUDFLARE_R2_ACCESS_KEY_ID`
+- `CLOUDFLARE_R2_SECRET_ACCESS_KEY`
+- `CLOUDFLARE_R2_BUCKET_NAME`
+- `CLOUDFLARE_R2_PUBLIC_URL` opcional
+
+Outras variáveis importantes do projeto:
+
+- `NEXT_PUBLIC_APP_URL`
+- `NEXTAUTH_URL`
+- `META_APP_ID`
+- `META_APP_SECRET`
+- `LINKEDIN_CLIENT_ID`
+- `LINKEDIN_CLIENT_SECRET`
+
+## Desenvolvimento
+
+```bash
+npm install
+npm run dev --workspace=web
+```
+
+## Verificação
+
+```bash
+npm run check-types --workspace=web
+```
+
+## Observações
+
+- O upload usa R2 diretamente para evitar o limite antigo de upload no servidor.
+- A mídia salva no banco pode apontar para a rota proxy do app, e o sistema normaliza isso quando precisa publicar em plataformas externas.
+- O projeto continua em evolução, então algumas integrações podem ser ajustadas conforme novas credenciais ou limites das plataformas.

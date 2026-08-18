@@ -1,6 +1,6 @@
 import "dotenv/config";
-import { prisma, PostStatus, OutboxStatus } from "@marklabs/database";
-import { FacebookProvider, InstagramProvider, AnalyticsSnapshot, SocialProvider } from "@marklabs/social";
+import { prisma, PostStatus } from "@marklabs/database";
+import { FacebookProvider, InstagramProvider, LinkedInProvider, AnalyticsSnapshot, SocialProvider } from "@marklabs/social";
 import { Worker, Job } from "bullmq";
 import IORedis from "ioredis";
 import * as Sentry from "@sentry/node";
@@ -19,7 +19,10 @@ function log(level: "INFO" | "WARN" | "ERROR", message: string, meta?: Record<st
 }
 
 async function publishPost(postId: string) {
-  const post = await prisma.post.findUnique({ where: { id: postId }, include: { socialAccount: true } });
+  const post = (await prisma.post.findUnique({
+    where: { id: postId },
+    include: { socialAccount: true, media: { orderBy: { order: "asc" } } },
+  })) as any;
   if (!post) throw new Error("Post não encontrado.");
   if (post.status === PostStatus.PUBLISHED) return;
   await prisma.post.update({ where: { id: post.id }, data: { status: PostStatus.PUBLISHING } });
@@ -41,7 +44,14 @@ async function publishPost(postId: string) {
   } else {
     throw new Error(`Plataforma não suportada: ${post.socialAccount.platform}`);
   }
-  const result = await provider.publish(post.socialAccount.accessToken, post.socialAccount.platformId, post.content);
+  const result = await provider.publish(post.socialAccount.accessToken, post.socialAccount.platformId, {
+    content: post.content,
+    postType: post.postType as "POST" | "REEL" | "STORY" | "CAROUSEL",
+    media: (post.media as Array<{ url: string; type: "IMAGE" | "VIDEO" }>).map((media) => ({
+      url: media.url,
+      type: media.type,
+    })),
+  });
   if (!result.success) throw new Error(result.error || "A publicação falhou.");
   await prisma.post.update({ where: { id: post.id }, data: { status: PostStatus.PUBLISHED, platformPostId: result.providerPostId, publishedAt: new Date(), errorMessage: null } });
   log("INFO", "Post publicado", { postId, platformPostId: result.providerPostId });

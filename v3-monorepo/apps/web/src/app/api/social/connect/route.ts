@@ -39,7 +39,11 @@ export async function GET(request: Request) {
     }
 
     const response = NextResponse.redirect(authUrl);
-    response.cookies.set(OAUTH_COOKIE, JSON.stringify({ state, teamId, platform, expiresAt: Date.now() + 10 * 60_000 }), { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/api/social", maxAge: 600 });
+    response.cookies.set(
+      OAUTH_COOKIE,
+      JSON.stringify({ state, teamId, platform, forceReauth: true, expiresAt: Date.now() + 10 * 60_000 }),
+      { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/api/social", maxAge: 600 }
+    );
     return response;
   } catch (error) {
     const result = apiErrorResponse(error);

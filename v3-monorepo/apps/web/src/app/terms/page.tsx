@@ -32,7 +32,7 @@ const sections = [
   {
     title: "4. Contas de Terceiros e Integrações",
     body: [
-      "O MarkLabs pode se integrar a serviços de terceiros, como Meta, LinkedIn, Google Cloud, Resend, Cloudinary e provedores de infraestrutura.",
+      "O MarkLabs pode se integrar a serviços de terceiros, como Meta, LinkedIn, Google Cloud, Resend, Cloudflare R2 e provedores de infraestrutura.",
       "O uso dessas integrações está sujeito também aos termos e políticas desses terceiros.",
       "Você é responsável por garantir que possui os direitos e permissões necessários para conectar contas, páginas, perfis e ativos digitais.",
     ],
