@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server";
-import { Resend } from "resend";
 import { prisma } from "@marklabs/database";
 import { apiErrorResponse, requireTeamAccess } from "@/lib/authorization";
-import { buildInviteEmail } from "@/lib/emails/invite-template";
-
-const resend = new Resend(process.env.RESEND_API_KEY);
+import { sendTeamInviteEmail } from "@/lib/email";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -16,7 +13,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Email e role são obrigatórios." }, { status: 400 });
     }
 
-    // Busca dados da equipe e do usuário que está convidando
     const [team, inviter] = await Promise.all([
       prisma.team.findUnique({ where: { id: teamId }, select: { name: true } }),
       prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true } }),
@@ -28,22 +24,30 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const teamName = team.name ?? "sua equipe";
     const inviterName = inviter?.name ?? inviter?.email ?? "Um membro da equipe";
-
-    // URL de aceite do convite (direciona para o fluxo de cadastro/login)
     const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
     const inviteUrl = `${baseUrl}/invite?teamId=${teamId}&email=${encodeURIComponent(email)}&role=${role}`;
 
-    // Envia o email via Resend
-    const { error } = await resend.emails.send({
-      from: "MarkLabs <onboarding@resend.dev>",
-      to: [email],
-      subject: `${inviterName} te convidou para a equipe ${teamName} no MarkLabs`,
-      html: buildInviteEmail({ teamName, inviterName, role, inviteUrl }),
-    });
+    const { error } = await sendTeamInviteEmail(email, teamName, inviterName, role, inviteUrl);
 
     if (error) {
       console.error("[INVITE EMAIL] Erro ao enviar:", error);
-      return NextResponse.json({ error: "Erro ao enviar o email de convite." }, { status: 500 });
+      const errorMessage = typeof error === "object" && error && "message" in error ? String((error as { message?: unknown }).message ?? "") : "";
+      if (errorMessage.includes("verify a domain") || errorMessage.includes("only send testing emails")) {
+        return NextResponse.json(
+          {
+            error:
+              "O Resend está em modo de teste. Para enviar convites para outras pessoas, você precisa verificar um domínio em resend.com/domains e usar esse domínio em EMAIL_FROM.",
+          },
+          { status: 403 }
+        );
+      }
+      return NextResponse.json(
+        {
+          error:
+            "Erro ao enviar o email de convite. Verifique RESEND_API_KEY e o remetente configurado em EMAIL_FROM.",
+        },
+        { status: 500 }
+      );
     }
 
     console.log(`[INVITE] Email enviado para ${email} (${role}) na equipe ${teamName}`);

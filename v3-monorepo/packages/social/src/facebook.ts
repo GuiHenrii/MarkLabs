@@ -7,6 +7,57 @@ export class FacebookProvider implements SocialProvider {
   platform = Platform.FACEBOOK;
   constructor(private readonly clientId: string, private readonly clientSecret: string) {}
 
+  private isPermissionError(errorData: unknown) {
+    const error = errorData as { error?: { code?: number; message?: string } } | undefined;
+    return error?.error?.code === 100 && !!error.error.message?.includes("pages_read_engagement");
+  }
+
+  private async canReadPageInsights(accessToken: string) {
+    const permissionsResponse = await fetch(
+      `${GRAPH_API}/me/permissions?${new URLSearchParams({ access_token: accessToken })}`
+    );
+
+    if (!permissionsResponse.ok) return false;
+
+    const permissionsData = (await permissionsResponse.json()) as {
+      data?: Array<{ permission?: string; status?: string }>;
+    };
+
+    return (
+      permissionsData.data?.some(
+        (permission) => permission.permission === "pages_read_engagement" && permission.status === "granted"
+      ) ?? false
+    );
+  }
+
+  private async getPageAccessToken(platformId: string, accessToken: string) {
+    // If we already have a page token, Meta will usually return the page node directly.
+    const directPageResponse = await fetch(
+      `${GRAPH_API}/${platformId}?${new URLSearchParams({
+        fields: "access_token",
+        access_token: accessToken,
+      })}`
+    );
+
+    if (directPageResponse.ok) {
+      const directPageData = (await directPageResponse.json()) as { access_token?: string };
+      if (directPageData.access_token) return directPageData.access_token;
+    }
+
+    // Fallback: resolve the page token from the user's connected pages list.
+    const pagesResponse = await fetch(
+      `${GRAPH_API}/me/accounts?${new URLSearchParams({
+        fields: "id,access_token",
+        access_token: accessToken,
+      })}`
+    );
+
+    if (!pagesResponse.ok) return accessToken;
+
+    const pagesData = (await pagesResponse.json()) as { data?: Array<{ id: string; access_token?: string }> };
+    return pagesData.data?.find((page) => page.id === platformId)?.access_token ?? accessToken;
+  }
+
   getAuthUrl(redirectUri: string, state: string) {
     // Usando escopos mínimos para modo desenvolvimento
     return `https://www.facebook.com/v20.0/dialog/oauth?${new URLSearchParams({ 
@@ -14,7 +65,9 @@ export class FacebookProvider implements SocialProvider {
       redirect_uri: redirectUri, 
       state, 
       scope: "pages_show_list,pages_read_engagement,pages_manage_metadata,business_management", 
-      response_type: "code" 
+      response_type: "code",
+      auth_type: "rerequest",
+      return_scopes: "true",
     })}`;
   }
 
@@ -102,9 +155,54 @@ export class FacebookProvider implements SocialProvider {
   }
 
   async getAnalytics(accessToken: string, platformId: string): Promise<AnalyticsSnapshot> {
-    const response = await fetch(`${GRAPH_API}/${platformId}/insights?${new URLSearchParams({ metric: "page_fans,page_impressions,page_post_engagements", access_token: accessToken })}`);
-    if (!response.ok) throw new Error("Não foi possível obter métricas do Facebook.");
-    return { followers: 0, impressions: 0, reach: 0, engagement: 0, likes: 0, comments: 0, shares: 0 };
+    const pageAccessToken = await this.getPageAccessToken(platformId, accessToken);
+
+    const canReadInsights = await this.canReadPageInsights(accessToken);
+    if (!canReadInsights) {
+      console.warn(
+        `[FACEBOOK ANALYTICS] Missing pages_read_engagement for platformId=${platformId}. Returning empty snapshot.`
+      );
+      return { followers: 0, impressions: 0, reach: 0, engagement: 0, likes: 0, comments: 0, shares: 0 };
+    }
+    
+    const [insightsResponse, postsResponse] = await Promise.all([
+      fetch(
+        `${GRAPH_API}/${platformId}/insights?${new URLSearchParams({
+          metric: "page_fans,page_impressions,page_post_engagements,page_impressions_unique",
+          access_token: pageAccessToken,
+        })}`
+      ),
+      fetch(
+        `${GRAPH_API}/${platformId}/posts?${new URLSearchParams({
+          fields: "insights.metric(post_impressions,post_impressions_unique,post_engaged_users)",
+          access_token: pageAccessToken,
+          limit: "10",
+        })}`
+      ),
+    ]);
+
+    if (!insightsResponse.ok) {
+      const errorData = await insightsResponse.json().catch(() => ({}));
+      if (!this.isPermissionError(errorData)) {
+        console.error("[FACEBOOK ANALYTICS ERROR]", errorData);
+      }
+      return { followers: 0, impressions: 0, reach: 0, engagement: 0, likes: 0, comments: 0, shares: 0 };
+    }
+
+    const insightsData = (await insightsResponse.json()) as { data?: Array<{ name: string; values?: Array<{ value: number }> }> };
+    const postsData = postsResponse.ok ? (await postsResponse.json()) as { data?: Array<{ insights?: { data?: Array<{ name: string; values?: Array<{ value: number }> }> } }> } : {};
+
+    const byName = new Map((insightsData.data ?? []).map((item) => [item.name, item.values?.[0]?.value ?? 0]));
+    const followers = byName.get("page_fans") ?? 0;
+    const impressions = byName.get("page_impressions") ?? 0;
+    const reach = byName.get("page_impressions_unique") ?? 0;
+    const engagement = byName.get("page_post_engagements") ?? 0;
+
+    const postMetrics = (postsData.data ?? []).flatMap((post) => post.insights?.data ?? []);
+    const likes = postMetrics.find((metric) => metric.name === "post_impressions_unique")?.values?.[0]?.value ?? 0;
+    const comments = postMetrics.find((metric) => metric.name === "post_engaged_users")?.values?.[0]?.value ?? 0;
+
+    return { followers, impressions, reach, engagement, likes, comments, shares: 0 };
   }
 
   async verifyHealth(accessToken: string) {

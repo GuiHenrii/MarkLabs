@@ -15,27 +15,6 @@ import { formatNumber, getPlatformLabel } from "@/lib/utils";
 import { useTeam } from "@/components/providers/TeamProvider";
 import Link from "next/link";
 
-// ─── Mock Data ────────────────────────────────────────────────────────────────
-// Engagement data is still mocked since no API provides this yet
-const engagementData = [
-  { day: "Seg", instagram: 1200, facebook: 800, linkedin: 400 },
-  { day: "Ter", instagram: 1900, facebook: 1200, linkedin: 600 },
-  { day: "Qua", instagram: 1500, facebook: 900, linkedin: 500 },
-  { day: "Qui", instagram: 2400, facebook: 1600, linkedin: 800 },
-  { day: "Sex", instagram: 2100, facebook: 1400, linkedin: 700 },
-  { day: "Sáb", instagram: 2800, facebook: 1800, linkedin: 900 },
-  { day: "Dom", instagram: 2600, facebook: 1700, linkedin: 850 },
-];
-
-const followersData = [
-  { month: "Mar", seguidores: 12000 },
-  { month: "Abr", seguidores: 13400 },
-  { month: "Mai", seguidores: 15200 },
-  { month: "Jun", seguidores: 16100 },
-  { month: "Jul", seguidores: 18900 },
-  { month: "Ago", seguidores: 21300 },
-];
-
 const platformColors: Record<string, string> = {
   instagram: "#e1306c",
   facebook: "#1877f2",
@@ -161,6 +140,9 @@ export default function DashboardPage() {
   const [metrics, setMetrics] = useState<any>(null);
   const [recentPosts, setRecentPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const engagementData = metrics?.engagementSeries ?? [];
+  const followersData = metrics?.followersSeries ?? [];
+  const byPlatform = metrics?.byPlatform ?? {};
 
   // Fetch dashboard metrics and posts
   useEffect(() => {
@@ -314,9 +296,23 @@ export default function DashboardPage() {
                 <YAxis stroke="var(--text-muted)" fontSize={11} tickFormatter={(v) => formatNumber(v)} />
                 <Tooltip contentStyle={customTooltipStyle} formatter={(v: any) => formatNumber(v)} />
                 <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: "12px" }} />
-                <Area type="monotone" dataKey="instagram" name="Instagram" stroke="#e1306c" fill="url(#igGrad)" strokeWidth={2} dot={false} />
-                <Area type="monotone" dataKey="facebook" name="Facebook" stroke="#1877f2" fill="url(#fbGrad)" strokeWidth={2} dot={false} />
-                <Area type="monotone" dataKey="linkedin" name="LinkedIn" stroke="#0a66c2" fill="url(#liGrad)" strokeWidth={2} dot={false} />
+                {(engagementData.length ? Object.keys(engagementData[0]).filter((key) => key !== "day") : Object.keys(byPlatform)).map((key) => {
+                  const normalizedKey = key.toLowerCase();
+                  const stroke = platformColors[normalizedKey] ?? "#ea580c";
+                  const gradientId = `${normalizedKey}Grad`;
+                  return (
+                    <Area
+                      key={key}
+                      type="monotone"
+                      dataKey={key}
+                      name={key.charAt(0).toUpperCase() + key.slice(1)}
+                      stroke={stroke}
+                      fill={`url(#${gradientId})`}
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                  );
+                })}
               </AreaChart>
             </ResponsiveContainer>
           </div>

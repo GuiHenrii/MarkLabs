@@ -120,6 +120,7 @@ model Post {
   authorId        String
   socialAccountId String
   content         String     @db.Text
+  postType        PostType   @default(POST)
   status          PostStatus @default(DRAFT)
   scheduledAt     DateTime?
   publishedAt     DateTime?
@@ -230,4 +231,11 @@ enum PostStatus {
 enum MediaType {
   IMAGE
   VIDEO
+}
+
+enum PostType {
+  POST
+  REEL
+  STORY
+  CAROUSEL
 }

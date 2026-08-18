@@ -12,7 +12,9 @@ export async function GET(request: Request) {
     });
     const records = await prisma.analytics.findMany({
       where: { socialAccountId: { in: socialAccounts.map((account) => account.id) } },
-      orderBy: { date: "asc" }, take: 30,
+      orderBy: { date: "asc" },
+      take: 30,
+      include: { socialAccount: { select: { platform: true } } },
     });
     const summary = records.reduce((total, record) => ({
       followers: total.followers + record.followers,

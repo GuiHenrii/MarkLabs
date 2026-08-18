@@ -1,4 +1,7 @@
 import { Resend } from "resend";
+import { buildInviteEmail } from "@/lib/emails/invite-template";
+
+export const DEFAULT_FROM_EMAIL = process.env.EMAIL_FROM || "MarkLabs <onboarding@resend.dev>";
 
 const getResend = () => {
   const apiKey = process.env.RESEND_API_KEY;
@@ -16,6 +19,16 @@ export interface EmailTemplate {
   html: string;
 }
 
+export async function sendEmail({ to, subject, html }: EmailTemplate) {
+  const resend = getResend();
+  return resend.emails.send({
+    from: DEFAULT_FROM_EMAIL,
+    to,
+    subject,
+    html,
+  });
+}
+
 /**
  * Enviar email de boas-vindas após cadastro
  */
@@ -24,13 +37,10 @@ export async function sendWelcomeEmail(
   name: string,
   activationLink: string
 ) {
-  try {
-    const resend = getResend();
-    const result = await resend.emails.send({
-      from: "MarkLabs <onboarding@resend.dev>",
-      to: email,
-      subject: "🎉 Bem-vindo ao MarkLabs! Seu gerenciador de redes sociais",
-      html: `
+  return sendEmail({
+    to: email,
+    subject: "🎉 Bem-vindo ao MarkLabs! Seu gerenciador de redes sociais",
+    html: `
         <!DOCTYPE html>
         <html>
           <head>
@@ -102,14 +112,7 @@ export async function sendWelcomeEmail(
           </body>
         </html>
       `,
-    });
-
-    console.log("✅ Email de boas-vindas enviado para", email);
-    return result;
-  } catch (error) {
-    console.error("❌ Erro ao enviar email de boas-vindas:", error);
-    throw error;
-  }
+  });
 }
 
 /**
@@ -120,13 +123,10 @@ export async function sendPasswordResetEmail(
   name: string,
   resetLink: string
 ) {
-  try {
-    const resend = getResend();
-    const result = await resend.emails.send({
-      from: "MarkLabs <onboarding@resend.dev>",
-      to: email,
-      subject: "🔐 Recuperação de Senha - MarkLabs",
-      html: `
+  return sendEmail({
+    to: email,
+    subject: "🔐 Recuperação de Senha - MarkLabs",
+    html: `
         <!DOCTYPE html>
         <html>
           <head>
@@ -192,14 +192,7 @@ export async function sendPasswordResetEmail(
           </body>
         </html>
       `,
-    });
-
-    console.log("✅ Email de recuperação enviado para", email);
-    return result;
-  } catch (error) {
-    console.error("❌ Erro ao enviar email de recuperação:", error);
-    throw error;
-  }
+  });
 }
 
 /**
@@ -212,13 +205,10 @@ export async function sendPublishErrorAlert(
   errorMessage: string,
   supportLink: string
 ) {
-  try {
-    const resend = getResend();
-    const result = await resend.emails.send({
-      from: "MarkLabs <onboarding@resend.dev>",
-      to: email,
-      subject: "⚠️ Falha ao Publicar Post - MarkLabs",
-      html: `
+  return sendEmail({
+    to: email,
+    subject: "⚠️ Falha ao Publicar Post - MarkLabs",
+    html: `
         <!DOCTYPE html>
         <html>
           <head>
@@ -268,12 +258,19 @@ export async function sendPublishErrorAlert(
           </body>
         </html>
       `,
-    });
+  });
+}
 
-    console.log("✅ Email de alerta enviado para", email);
-    return result;
-  } catch (error) {
-    console.error("❌ Erro ao enviar email de alerta:", error);
-    throw error;
-  }
+export async function sendTeamInviteEmail(
+  email: string,
+  teamName: string,
+  inviterName: string,
+  role: string,
+  inviteUrl: string
+) {
+  return sendEmail({
+    to: email,
+    subject: `${inviterName} te convidou para a equipe ${teamName} no MarkLabs`,
+    html: buildInviteEmail({ teamName, inviterName, role, inviteUrl }),
+  });
 }

@@ -1,33 +1,70 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { UserPlus, Shield, Edit3, Eye, MoreHorizontal, CheckCircle2, Clock, Mail } from "lucide-react";
 import { Topbar } from "@/components/layout/Topbar";
 import { useTeam } from "@/components/providers/TeamProvider";
 
-const mockMembers = [
-  { id: "1", name: "Ana Souza", email: "ana@empresa.com", role: "ADMIN", avatar: "AS", status: "ACTIVE", joinedAt: "01/06/2026", lastActive: "Hoje" },
-  { id: "2", name: "Bruno Costa", email: "bruno@empresa.com", role: "EDITOR", avatar: "BC", status: "ACTIVE", joinedAt: "15/06/2026", lastActive: "Ontem" },
-  { id: "3", name: "Carla Lima", email: "carla@empresa.com", role: "EDITOR", avatar: "CL", status: "ACTIVE", joinedAt: "20/07/2026", lastActive: "3 dias atrás" },
-  { id: "4", name: "Diego Ferreira", email: "diego@empresa.com", role: "VIEWER", avatar: "DF", status: "PENDING", joinedAt: "—", lastActive: "—" },
-  { id: "5", name: "Elena Martins", email: "elena@empresa.com", role: "EDITOR", avatar: "EM", status: "ACTIVE", joinedAt: "01/08/2026", lastActive: "5 dias atrás" },
-];
+type TeamMember = {
+  id: string;
+  userId: string;
+  name: string;
+  email: string;
+  avatar?: string;
+  role: "ADMIN" | "EDITOR" | "VIEWER";
+  joinedAt: string;
+};
+
+type TeamPayload = {
+  team: {
+    id: string;
+    name: string;
+    membersCount: number;
+    accountsCount: number;
+    postsCount: number;
+    members: TeamMember[];
+  };
+};
 
 const roleConfig = {
   ADMIN: { label: "Admin", color: "#ea580c", icon: Shield, bg: "rgba(234,88,12,0.15)", border: "rgba(234,88,12,0.3)", description: "Acesso total à plataforma" },
   EDITOR: { label: "Editor", color: "#10b981", icon: Edit3, bg: "rgba(16,185,129,0.15)", border: "rgba(16,185,129,0.3)", description: "Criar e publicar posts" },
   VIEWER: { label: "Visualizador", color: "#f59e0b", icon: Eye, bg: "rgba(245,158,11,0.15)", border: "rgba(245,158,11,0.3)", description: "Apenas visualizar" },
-};
+} as const;
 
 const avatarColors = ["#ea580c", "#9a3412", "#ec4899", "#10b981", "#f59e0b"];
+
+function formatDate(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString("pt-BR");
+}
 
 export default function TeamPage() {
   const { teamId } = useTeam();
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState("EDITOR");
+  const [inviteRole, setInviteRole] = useState<"ADMIN" | "EDITOR" | "VIEWER">("EDITOR");
   const [sending, setSending] = useState(false);
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
+  const [payload, setPayload] = useState<TeamPayload | null>(null);
+
+  useEffect(() => {
+    if (!teamId) return;
+
+    fetch(`/api/teams/${teamId}`)
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error("Falha ao carregar equipe"))))
+      .then(setPayload)
+      .catch((error) => console.error("Erro ao carregar equipe:", error));
+  }, [teamId]);
+
+  const team = payload?.team;
+  const members = team?.members ?? [];
+
+  const stats = useMemo(() => ({
+    totalMembers: team?.membersCount ?? members.length,
+    activeMembers: members.length,
+    pendingInvites: 0,
+  }), [members.length, team?.membersCount]);
 
   const handleSendInvite = async () => {
     if (!inviteEmail || !teamId) return;
@@ -40,14 +77,14 @@ export default function TeamPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        alert(`✅ Convite enviado para ${inviteEmail}! O email deve chegar em instantes.`);
+        alert(`Convite enviado para ${inviteEmail}.`);
         setShowInviteModal(false);
         setInviteEmail("");
       } else {
-        alert(`❌ Erro: ${data.error || "Não foi possível enviar o convite."}`);
+        alert(`Erro: ${data.error || "Não foi possível enviar o convite."}`);
       }
-    } catch (error) {
-      alert("❌ Erro de conexão ao enviar convite.");
+    } catch {
+      alert("Erro de conexão ao enviar convite.");
     } finally {
       setSending(false);
     }
@@ -58,12 +95,11 @@ export default function TeamPage() {
       <Topbar title="Gestão de Equipe" subtitle="Gerencie os membros e permissões da sua equipe" />
 
       <main style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "20px", flex: 1 }} className="animate-fade-in">
-        {/* Stats */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "14px" }}>
           {[
-            { label: "Total de Membros", value: "5", icon: "👥" },
-            { label: "Membros Ativos", value: "4", icon: "✅" },
-            { label: "Convites Pendentes", value: "1", icon: "📧" },
+            { label: "Total de Membros", value: String(stats.totalMembers), icon: "👥" },
+            { label: "Membros Ativos", value: String(stats.activeMembers), icon: "✅" },
+            { label: "Convites Pendentes", value: String(stats.pendingInvites), icon: "📧" },
           ].map((s) => (
             <div key={s.label} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "12px", padding: "16px", display: "flex", alignItems: "center", gap: "12px" }}>
               <span style={{ fontSize: "28px" }}>{s.icon}</span>
@@ -75,7 +111,6 @@ export default function TeamPage() {
           ))}
         </div>
 
-        {/* Members table */}
         <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "14px", overflow: "hidden" }}>
           <div style={{ padding: "18px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <h2 style={{ fontSize: "15px", fontWeight: 700, color: "var(--text-primary)" }}>Membros da Equipe</h2>
@@ -83,10 +118,18 @@ export default function TeamPage() {
               id="invite-member-btn"
               onClick={() => setShowInviteModal(true)}
               style={{
-                display: "flex", alignItems: "center", gap: "7px", padding: "8px 16px",
-                background: "linear-gradient(135deg, #ea580c, #c2410c)", border: "none",
-                borderRadius: "9px", color: "#fff", fontSize: "13px", fontWeight: 600,
-                cursor: "pointer", boxShadow: "0 0 12px rgba(234,88,12,0.3)",
+                display: "flex",
+                alignItems: "center",
+                gap: "7px",
+                padding: "8px 16px",
+                background: "linear-gradient(135deg, #ea580c, #c2410c)",
+                border: "none",
+                borderRadius: "9px",
+                color: "#fff",
+                fontSize: "13px",
+                fontWeight: 600,
+                cursor: "pointer",
+                boxShadow: "0 0 12px rgba(234,88,12,0.3)",
               }}
             >
               <UserPlus size={14} />
@@ -105,20 +148,21 @@ export default function TeamPage() {
               </tr>
             </thead>
             <tbody>
-              {mockMembers.map((member, i) => {
-                const role = roleConfig[member.role as keyof typeof roleConfig];
+              {members.map((member, i) => {
+                const role = roleConfig[member.role];
                 const RoleIcon = role.icon;
+                const avatar = (member.name || member.email)
+                  .split(" ")
+                  .slice(0, 2)
+                  .map((part) => part[0]?.toUpperCase() ?? "")
+                  .join("");
                 const avatarColor = avatarColors[i % avatarColors.length];
                 return (
-                  <tr
-                    key={member.id}
-                    style={{ borderTop: "1px solid var(--border)", transition: "background 0.15s ease" }}
-                    className="team-row"
-                  >
+                  <tr key={member.id} style={{ borderTop: "1px solid var(--border)", transition: "background 0.15s ease" }} className="team-row">
                     <td style={{ padding: "14px 20px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                         <div style={{ width: "36px", height: "36px", borderRadius: "50%", background: `${avatarColor}25`, border: `1.5px solid ${avatarColor}50`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", fontWeight: 700, color: avatarColor, flexShrink: 0 }}>
-                          {member.avatar}
+                          {avatar}
                         </div>
                         <div>
                           <p style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)" }}>{member.name}</p>
@@ -134,27 +178,24 @@ export default function TeamPage() {
                     </td>
                     <td style={{ padding: "14px 20px" }}>
                       <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "12px" }}>
-                        {member.status === "ACTIVE" ? (
-                          <><CheckCircle2 size={12} style={{ color: "#10b981" }} /><span style={{ color: "#10b981" }}>Ativo</span></>
-                        ) : (
-                          <><Clock size={12} style={{ color: "#f59e0b" }} /><span style={{ color: "#f59e0b" }}>Pendente</span></>
-                        )}
+                        <CheckCircle2 size={12} style={{ color: "#10b981" }} />
+                        <span style={{ color: "#10b981" }}>Ativo</span>
                       </span>
                     </td>
-                    <td style={{ padding: "14px 20px", fontSize: "12px", color: "var(--text-muted)" }}>{member.joinedAt}</td>
-                    <td style={{ padding: "14px 20px", fontSize: "12px", color: "var(--text-muted)" }}>{member.lastActive}</td>
+                    <td style={{ padding: "14px 20px", fontSize: "12px", color: "var(--text-muted)" }}>{formatDate(member.joinedAt)}</td>
+                    <td style={{ padding: "14px 20px", fontSize: "12px", color: "var(--text-muted)" }}>Hoje</td>
                     <td style={{ padding: "14px 20px", position: "relative" }}>
-                      <button 
-                        id={`member-menu-${member.id}`} 
+                      <button
+                        id={`member-menu-${member.id}`}
                         onClick={() => setActiveMenu(activeMenu === member.id ? null : member.id)}
                         style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: "4px" }}
                       >
                         <MoreHorizontal size={15} />
                       </button>
                       {activeMenu === member.id && (
-                        <div style={{ position: "absolute", top: "40px", right: "20px", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "8px", boxShadow: "0 8px 24px rgba(0,0,0,0.15)", zIndex: 10, width: "140px", display: "flex", flexDirection: "column" }}>
-                          <button onClick={() => { setActiveMenu(null); alert("Funcionalidade de edição de permissão em breve."); }} style={{ textAlign: "left", padding: "10px 14px", background: "none", border: "none", borderBottom: "1px solid var(--border)", color: "var(--text-primary)", fontSize: "12px", cursor: "pointer" }}>Editar Permissão</button>
-                          <button onClick={() => { setActiveMenu(null); alert("Membro removido (simulado)."); }} style={{ textAlign: "left", padding: "10px 14px", background: "none", border: "none", color: "#ef4444", fontSize: "12px", cursor: "pointer" }}>Remover</button>
+                        <div style={{ position: "absolute", top: "40px", right: "20px", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "8px", boxShadow: "0 8px 24px rgba(0,0,0,0.15)", zIndex: 10, width: "160px", display: "flex", flexDirection: "column" }}>
+                          <button onClick={() => { setActiveMenu(null); alert("Edição de permissão ainda não foi conectada à API."); }} style={{ textAlign: "left", padding: "10px 14px", background: "none", border: "none", borderBottom: "1px solid var(--border)", color: "var(--text-primary)", fontSize: "12px", cursor: "pointer" }}>Editar Permissão</button>
+                          <button onClick={() => { setActiveMenu(null); alert("Remoção de membro ainda não foi conectada à API."); }} style={{ textAlign: "left", padding: "10px 14px", background: "none", border: "none", color: "#ef4444", fontSize: "12px", cursor: "pointer" }}>Remover</button>
                         </div>
                       )}
                     </td>
@@ -165,7 +206,6 @@ export default function TeamPage() {
           </table>
         </div>
 
-        {/* Roles description */}
         <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "14px", padding: "20px" }}>
           <h2 style={{ fontSize: "15px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "14px" }}>Níveis de Acesso</h2>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px" }}>
@@ -185,7 +225,6 @@ export default function TeamPage() {
         </div>
       </main>
 
-      {/* Invite Modal */}
       {showInviteModal && (
         <div
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, backdropFilter: "blur(4px)" }}
@@ -219,7 +258,7 @@ export default function TeamPage() {
                 <select
                   id="invite-role-select"
                   value={inviteRole}
-                  onChange={(e) => setInviteRole(e.target.value)}
+                  onChange={(e) => setInviteRole(e.target.value as "ADMIN" | "EDITOR" | "VIEWER")}
                   style={{ width: "100%", padding: "10px 12px", background: "var(--bg-secondary)", border: "1px solid var(--border)", borderRadius: "9px", color: "var(--text-primary)", fontSize: "13px", outline: "none" }}
                 >
                   <option value="ADMIN">Admin — Acesso total</option>

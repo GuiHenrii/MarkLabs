@@ -20,4 +20,3 @@ export function Logo({ className = "", width = 180 }: { className?: string; widt
     </div>
   );
 }
-

@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { prisma, PostStatus, OutboxStatus } from "@marklabs/database";
-import { FacebookProvider } from "@marklabs/social";
+import { FacebookProvider, InstagramProvider, AnalyticsSnapshot, SocialProvider } from "@marklabs/social";
 import { Worker, Job } from "bullmq";
 import IORedis from "ioredis";
 import * as Sentry from "@sentry/node";
@@ -12,6 +12,7 @@ Sentry.init({
 
 const REDIS_URL = process.env.REDIS_URL || "redis://127.0.0.1:6379";
 const connection = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
+const ANALYTICS_REFRESH_MS = Number(process.env.ANALYTICS_REFRESH_MS || 15 * 60_000);
 
 function log(level: "INFO" | "WARN" | "ERROR", message: string, meta?: Record<string, unknown>) {
   console.log(JSON.stringify({ timestamp: new Date().toISOString(), level, service: "marklabs-worker", message, ...meta }));
@@ -46,6 +47,97 @@ async function publishPost(postId: string) {
   log("INFO", "Post publicado", { postId, platformPostId: result.providerPostId });
 }
 
+function emptySnapshot(): AnalyticsSnapshot {
+  return { followers: 0, impressions: 0, reach: 0, engagement: 0, likes: 0, comments: 0, shares: 0 };
+}
+
+async function collectAnalyticsForAccount(account: {
+  id: string;
+  platform: string;
+  platformId: string;
+  accessToken: string;
+}) {
+  const appId = process.env.META_APP_ID;
+  const appSecret = process.env.META_APP_SECRET;
+  const today = new Date();
+
+  let provider: SocialProvider | null = null;
+  if (account.platform === "FACEBOOK" && appId && appSecret) provider = new FacebookProvider(appId, appSecret);
+  if (account.platform === "INSTAGRAM" && appId && appSecret) provider = new InstagramProvider(appId, appSecret);
+
+  const metrics =
+    provider && account.accessToken
+      ? await provider.getAnalytics(account.accessToken, account.platformId).catch((error) => {
+          log("WARN", "Analytics fetch failed", {
+            socialAccountId: account.id,
+            platform: account.platform,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return emptySnapshot();
+        })
+      : emptySnapshot();
+
+  await prisma.analytics.upsert({
+    where: {
+      socialAccountId_date: {
+        socialAccountId: account.id,
+        date: today,
+      },
+    },
+    update: {
+      ...metrics,
+    },
+    create: {
+      socialAccountId: account.id,
+      date: today,
+      ...metrics,
+    },
+  });
+
+  return metrics;
+}
+
+async function refreshAnalytics() {
+  const appId = process.env.META_APP_ID;
+  const appSecret = process.env.META_APP_SECRET;
+  if (!appId || !appSecret) {
+    log("WARN", "Skipping analytics refresh because Meta credentials are missing");
+    return;
+  }
+
+  const accounts = await prisma.socialAccount.findMany({
+    where: {
+      isActive: true,
+      platform: { in: ["FACEBOOK", "INSTAGRAM"] },
+    },
+    select: {
+      id: true,
+      platform: true,
+      platformId: true,
+      accessToken: true,
+    },
+  });
+
+  for (const account of accounts) {
+    if (!account.accessToken) continue;
+    try {
+      const metrics = await collectAnalyticsForAccount({
+        id: account.id,
+        platform: account.platform,
+        platformId: account.platformId,
+        accessToken: account.accessToken,
+      });
+      log("INFO", "Analytics refreshed", { socialAccountId: account.id, platform: account.platform, metrics });
+    } catch (error) {
+      log("ERROR", "Failed to persist analytics", {
+        socialAccountId: account.id,
+        platform: account.platform,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+}
+
 // Criar o Worker do BullMQ para processar publicações de posts
 const worker = new Worker(
   "PostQueue",
@@ -75,4 +167,15 @@ worker.on("failed", (job, error) => {
 });
 
 log("INFO", "Worker BullMQ iniciado com sucesso!");
+
+refreshAnalytics().catch((error) => {
+  log("ERROR", "Initial analytics refresh failed", { error: error instanceof Error ? error.message : String(error) });
+});
+
+setInterval(() => {
+  refreshAnalytics().catch((error) => {
+    log("ERROR", "Scheduled analytics refresh failed", { error: error instanceof Error ? error.message : String(error) });
+  });
+}, ANALYTICS_REFRESH_MS);
+
 export default worker;

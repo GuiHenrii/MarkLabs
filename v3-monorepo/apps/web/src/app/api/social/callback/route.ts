@@ -6,6 +6,22 @@ import { apiErrorResponse, requireTeamAccess } from "@/lib/authorization";
 
 const OAUTH_COOKIE = "marklabs_oauth_state";
 
+async function getMetaPermissions(accessToken: string) {
+  const response = await fetch(
+    `https://graph.facebook.com/v20.0/me/permissions?${new URLSearchParams({
+      access_token: accessToken,
+    })}`
+  );
+
+  if (!response.ok) return [];
+
+  const data = (await response.json()) as {
+    data?: Array<{ permission?: string; status?: string }>;
+  };
+
+  return data.data ?? [];
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
@@ -36,6 +52,20 @@ export async function GET(request: Request) {
         : new InstagramProvider(appId, appSecret);
         
       account = await provider.exchangeCode(code, `${process.env.NEXTAUTH_URL || url.origin}/api/social/callback`);
+
+      try {
+        const permissions = await getMetaPermissions(account.accessToken);
+        console.log(`[META CALLBACK] ${saved.platform} permissions:`, permissions);
+
+        if (
+          saved.platform === "FACEBOOK" &&
+          !permissions.some((permission) => permission.permission === "pages_read_engagement" && permission.status === "granted")
+        ) {
+          return fail("facebook_missing_pages_read_engagement");
+        }
+      } catch (debugError) {
+        console.error("[META CALLBACK] Failed to inspect permissions:", debugError);
+      }
     } else if (saved.platform === "LINKEDIN") {
       const clientId = process.env.LINKEDIN_CLIENT_ID;
       const clientSecret = process.env.LINKEDIN_CLIENT_SECRET;

@@ -7,6 +7,21 @@ export interface PublishResult {
   rateLimited?: boolean;
 }
 
+export type PostType = "POST" | "REEL" | "STORY" | "CAROUSEL";
+export type MediaType = "IMAGE" | "VIDEO";
+
+export interface PublishMedia {
+  url: string;
+  type: MediaType;
+  order?: number;
+}
+
+export interface PublishInput {
+  content: string;
+  postType?: PostType;
+  media?: PublishMedia[];
+}
+
 export interface AnalyticsSnapshot {
   followers: number;
   impressions: number;
@@ -33,7 +48,7 @@ export interface SocialProvider {
   /**
    * Publishes content to the social network.
    */
-  publish(accessToken: string, platformId: string, content: string, mediaUrls?: string[]): Promise<PublishResult>;
+  publish(accessToken: string, platformId: string, input: PublishInput): Promise<PublishResult>;
 
   /**
    * Fetches the latest analytics for the social account.

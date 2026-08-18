@@ -90,6 +90,18 @@ export async function GET(
     const team = await prisma.team.findUnique({
       where: { id },
       include: {
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                image: true,
+              },
+            },
+          },
+        },
         _count: {
           select: {
             members: true,
@@ -114,6 +126,15 @@ export async function GET(
         membersCount: team._count.members,
         accountsCount: team._count.socialAccounts,
         postsCount: team._count.posts,
+        members: team.members.map((member) => ({
+          id: member.id,
+          userId: member.userId,
+          name: member.user.name ?? member.user.email,
+          email: member.user.email,
+          avatar: member.user.image ?? undefined,
+          role: member.role,
+          joinedAt: member.createdAt,
+        })),
       },
     });
   } catch (error) {

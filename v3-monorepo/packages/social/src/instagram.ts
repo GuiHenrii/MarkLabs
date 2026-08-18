@@ -24,6 +24,8 @@ export class InstagramProvider implements SocialProvider {
       state,
       scope: "instagram_basic,pages_show_list,pages_read_engagement,business_management",
       response_type: "code",
+      auth_type: "rerequest",
+      return_scopes: "true",
     })}`;
   }
 
@@ -48,8 +50,17 @@ export class InstagramProvider implements SocialProvider {
     let pagesText = await pagesResponse.text();
     console.log("[INSTAGRAM DEBUG] Resposta de /me/accounts:", pagesText);
     
-    let pages = JSON.parse(pagesText) as { data?: Array<{ id: string; name: string; instagram_business_account?: InstagramAccountType }> };
-    let igAccount: InstagramAccountType | undefined = pages.data?.find(p => p.instagram_business_account)?.instagram_business_account;
+    let pages = JSON.parse(pagesText) as {
+      data?: Array<{
+        id: string;
+        name: string;
+        access_token?: string;
+        instagram_business_account?: InstagramAccountType;
+      }>;
+    };
+    const primaryPage = pages.data?.find((p) => p.instagram_business_account);
+    let igAccount: InstagramAccountType | undefined = primaryPage?.instagram_business_account;
+    let pageAccessToken: string | undefined = primaryPage?.access_token;
 
     // Se não encontrou nas páginas pessoais, busca via Business Manager
     if (!igAccount) {
@@ -162,6 +173,7 @@ export class InstagramProvider implements SocialProvider {
               console.log(`[INSTAGRAM DEBUG] Resposta com Page Token para ${targetId}:`, pageIgData);
               if (pageIgData?.instagram_business_account) {
                 igAccount = pageIgData.instagram_business_account;
+                pageAccessToken = nodeData.access_token ?? pageAccessToken;
                 break;
               }
             }
@@ -186,7 +198,7 @@ export class InstagramProvider implements SocialProvider {
     if (!igAccount) throw new Error("Nenhuma conta do Instagram Business encontrada vinculada às suas páginas do Facebook.");
 
     return {
-      accessToken: token.access_token,
+      accessToken: pageAccessToken ?? token.access_token,
       platformId: igAccount.id,
       name: igAccount.name || igAccount.username,
       username: igAccount.username,
@@ -238,7 +250,56 @@ export class InstagramProvider implements SocialProvider {
   }
 
   async getAnalytics(accessToken: string, platformId: string): Promise<AnalyticsSnapshot> {
-    return { followers: 0, impressions: 0, reach: 0, engagement: 0, likes: 0, comments: 0, shares: 0 };
+    const [accountResponse, insightsResponse, mediaResponse] = await Promise.all([
+      fetch(`${GRAPH_API}/${platformId}?${new URLSearchParams({
+        fields: "followers_count,media_count,username,name",
+        access_token: accessToken,
+      })}`),
+      fetch(`${GRAPH_API}/${platformId}/insights?${new URLSearchParams({
+        metric: "impressions,reach,profile_views",
+        period: "day",
+        access_token: accessToken,
+      })}`),
+      fetch(`${GRAPH_API}/${platformId}/media?${new URLSearchParams({
+        fields: "like_count,comments_count",
+        limit: "10",
+        access_token: accessToken,
+      })}`),
+    ]);
+
+    if (!accountResponse.ok) {
+      const errorData = await accountResponse.json().catch(() => ({}));
+      console.error("[INSTAGRAM ANALYTICS ERROR]", errorData);
+      return { followers: 0, impressions: 0, reach: 0, engagement: 0, likes: 0, comments: 0, shares: 0 };
+    }
+
+    const accountData = (await accountResponse.json()) as { followers_count?: number };
+    const insightsData = insightsResponse.ok
+      ? (await insightsResponse.json()) as {
+          data?: Array<{ name: string; values?: Array<{ value: number }> }>;
+        }
+      : {};
+    const mediaData = mediaResponse.ok
+      ? (await mediaResponse.json()) as { data?: Array<{ like_count?: number; comments_count?: number }> }
+      : {};
+    const mediaItems = mediaData.data ?? [];
+
+    const byName = new Map((insightsData.data ?? []).map((item) => [item.name, item.values?.[0]?.value ?? 0]));
+    const impressions = byName.get("impressions") ?? 0;
+    const reach = byName.get("reach") ?? 0;
+    const engagement = byName.get("profile_views") ?? 0;
+    const likes = mediaItems.reduce((sum, media) => sum + (media.like_count ?? 0), 0);
+    const comments = mediaItems.reduce((sum, media) => sum + (media.comments_count ?? 0), 0);
+
+    return {
+      followers: accountData.followers_count ?? 0,
+      impressions,
+      reach,
+      engagement,
+      likes,
+      comments,
+      shares: 0,
+    };
   }
 
   async verifyHealth(accessToken: string) {
