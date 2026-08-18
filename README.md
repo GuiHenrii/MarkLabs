@@ -62,4 +62,4 @@ npm run dev
 - ✅ Autenticação robusta (JWT + Sessions).
 
 ---
-Desenvolvido com ❤️ pela equipe **MarkLabs**.
+Desenvolvido com ❤️ por **UNIT**.
