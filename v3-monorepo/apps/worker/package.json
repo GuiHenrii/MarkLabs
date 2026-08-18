@@ -1,0 +1,26 @@
+{
+  "name": "worker",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "npx tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "eslint src",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@marklabs/database": "*",
+    "@marklabs/social": "*",
+    "@sentry/node": "^10.70.0",
+    "bullmq": "^6.1.2",
+    "dotenv": "^16.4.5",
+    "ioredis": "^6.0.0"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "*",
+    "@types/node": "^20.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.0.0"
+  }
+}

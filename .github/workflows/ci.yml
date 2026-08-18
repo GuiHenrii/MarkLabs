@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+          cache-dependency-path: v3-monorepo/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: cd v3-monorepo && pnpm install
+
+      - name: Lint
+        run: cd v3-monorepo && pnpm lint
+
+      - name: Generate Prisma Client
+        run: cd v3-monorepo && pnpm --filter @marklabs/database generate
+
+      - name: Run Unit Tests (Vitest)
+        run: cd v3-monorepo && pnpm --filter apps/web test

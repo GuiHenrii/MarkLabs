@@ -1,0 +1,32 @@
+# Base para o monorepo
+FROM node:20-slim AS base
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN corepack enable
+WORKDIR /app
+
+# Instalação de dependências
+FROM base AS deps
+COPY . .
+RUN pnpm install --frozen-lockfile
+
+# Build da aplicação Web
+FROM deps AS web-builder
+RUN pnpm --filter apps/web build
+
+# Runner para Web
+FROM base AS web
+COPY --from=web-builder /app /app
+COPY v3-monorepo/docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["docker-entrypoint.sh"]
+EXPOSE 3000
+CMD ["pnpm", "--filter", "apps/web", "start"]
+
+# Runner para Worker
+FROM base AS worker
+COPY --from=deps /app /app
+COPY v3-monorepo/docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["pnpm", "--filter", "apps/worker", "start"]
