@@ -61,13 +61,15 @@ export class FacebookProvider implements SocialProvider {
           const bizPagesData = JSON.parse(bizPagesText) as { data?: Array<{ id: string; name: string; access_token: string; picture?: { data?: { url?: string } } }> };
           if (bizPagesData.data && bizPagesData.data.length > 0) {
             const bizPage = bizPagesData.data[0];
-            page = {
-              id: bizPage.id,
-              name: bizPage.name,
-              access_token: bizPage.access_token || token.access_token,
-              picture: bizPage.picture
-            };
-            break;
+            if (bizPage) {
+              page = {
+                id: bizPage.id,
+                name: bizPage.name,
+                access_token: bizPage.access_token || token.access_token,
+                picture: bizPage.picture
+              };
+              break;
+            }
           }
         }
       } else {

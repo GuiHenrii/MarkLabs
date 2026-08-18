@@ -10,14 +10,15 @@ import {
   Image,
   Users,
   Settings,
-  Zap,
   ChevronRight,
-  Bell,
   LogOut,
   Globe,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/ui/Logo";
+import { useTheme } from "@/components/providers/ThemeProvider";
 
 const navItems = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
@@ -29,12 +30,11 @@ const navItems = [
   { href: "/team", icon: Users, label: "Equipe" },
 ];
 
-const bottomItems = [
-  { href: "/settings", icon: Settings, label: "Configurações" },
-];
+const bottomItems = [{ href: "/settings", icon: Settings, label: "Configurações" }];
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { theme, toggleTheme } = useTheme();
 
   return (
     <aside
@@ -52,7 +52,6 @@ export function Sidebar() {
         zIndex: 40,
       }}
     >
-      {/* Logo */}
       <div
         style={{
           padding: "20px 20px 16px",
@@ -72,7 +71,6 @@ export function Sidebar() {
         </Link>
       </div>
 
-      {/* Navigation */}
       <nav style={{ flex: 1, padding: "12px 12px" }}>
         <p
           style={{
@@ -120,10 +118,7 @@ export function Sidebar() {
                   />
                   {label}
                   {isActive && (
-                    <ChevronRight
-                      size={13}
-                      style={{ marginLeft: "auto", color: "#fb923c" }}
-                    />
+                    <ChevronRight size={13} style={{ marginLeft: "auto", color: "#fb923c" }} />
                   )}
                 </Link>
               </li>
@@ -132,7 +127,6 @@ export function Sidebar() {
         </ul>
       </nav>
 
-      {/* Bottom */}
       <div
         style={{
           padding: "12px",
@@ -164,7 +158,37 @@ export function Sidebar() {
           </Link>
         ))}
 
-        {/* User Avatar */}
+        <button
+          onClick={toggleTheme}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            padding: "9px 10px",
+            borderRadius: "8px",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            width: "100%",
+            fontSize: "13.5px",
+            color: "var(--text-secondary)",
+            transition: "all 0.15s ease",
+          }}
+          className="sidebar-link"
+        >
+          {theme === "dark" ? (
+            <>
+              <Sun size={16} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+              Modo Claro
+            </>
+          ) : (
+            <>
+              <Moon size={16} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+              Modo Escuro
+            </>
+          )}
+        </button>
+
         <div
           style={{
             display: "flex",
@@ -195,10 +219,27 @@ export function Sidebar() {
             M
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <p
+              style={{
+                fontSize: "12px",
+                fontWeight: 600,
+                color: "var(--text-primary)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
               Minha Empresa
             </p>
-            <p style={{ fontSize: "11px", color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <p
+              style={{
+                fontSize: "11px",
+                color: "var(--text-muted)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
               admin@empresa.com
             </p>
           </div>

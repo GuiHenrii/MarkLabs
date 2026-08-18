@@ -42,8 +42,8 @@
   --youtube: #ff0000;
 }
 
-/* Dark theme (MarkShare) */
-:root {
+/* Dark theme (MarkShare - default) */
+:root, html.dark {
   --bg-primary: #09090b;
   --bg-secondary: #121214;
   --bg-card: #18181b;
@@ -53,6 +53,20 @@
   --border-light: #3f3f46;
   --text-primary: #fafafa;
   --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+}
+
+/* Light theme */
+html.light {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f4f4f5;
+  --bg-card: #ffffff;
+  --bg-hover: #e4e4e7;
+  --bg-active: #d4d4d8;
+  --border: #e4e4e7;
+  --border-light: #d4d4d8;
+  --text-primary: #09090b;
+  --text-secondary: #52525b;
   --text-muted: #71717a;
 }
 

@@ -3,6 +3,13 @@ import { AnalyticsSnapshot, PublishResult, SocialProvider } from "./index";
 
 const GRAPH_API = "https://graph.facebook.com/v20.0";
 
+interface InstagramAccountType {
+  id: string;
+  username: string;
+  name?: string;
+  profile_picture_url?: string;
+}
+
 export class InstagramProvider implements SocialProvider {
   platform = Platform.INSTAGRAM;
 
@@ -41,8 +48,8 @@ export class InstagramProvider implements SocialProvider {
     let pagesText = await pagesResponse.text();
     console.log("[INSTAGRAM DEBUG] Resposta de /me/accounts:", pagesText);
     
-    let pages = JSON.parse(pagesText) as { data?: Array<{ id: string; name: string; instagram_business_account?: { id: string; username: string; name: string; profile_picture_url?: string } }> };
-    let igAccount = pages.data?.find(p => p.instagram_business_account)?.instagram_business_account;
+    let pages = JSON.parse(pagesText) as { data?: Array<{ id: string; name: string; instagram_business_account?: InstagramAccountType }> };
+    let igAccount: InstagramAccountType | undefined = pages.data?.find(p => p.instagram_business_account)?.instagram_business_account;
 
     // Se não encontrou nas páginas pessoais, busca via Business Manager
     if (!igAccount) {
@@ -62,12 +69,14 @@ export class InstagramProvider implements SocialProvider {
         if (bizIgData.data && bizIgData.data.length > 0) {
           console.log("[INSTAGRAM DEBUG] Contas encontradas diretamente no Business:", bizIgData.data);
           const first = bizIgData.data[0];
-          igAccount = {
-            id: first.id,
-            username: first.username,
-            name: first.name || first.username,
-            profile_picture_url: first.profile_pic
-          };
+          if (first) {
+            igAccount = {
+              id: first.id,
+              username: first.username,
+              name: first.name || first.username,
+              profile_picture_url: first.profile_pic
+            };
+          }
         }
 
         // 2. Se não achou direto, varre TODAS as páginas (owned e client) procurando o Instagram
