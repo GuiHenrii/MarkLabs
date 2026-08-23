@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@marklabs/database";
 import { apiErrorResponse, requireTeamAccess } from "@/lib/authorization";
+import { FacebookProvider, InstagramProvider } from "@marklabs/social";
 
 export async function GET(request: Request) {
   const teamId = new URL(request.url).searchParams.get("teamId");
@@ -8,20 +9,75 @@ export async function GET(request: Request) {
   try {
     await requireTeamAccess(teamId);
     const socialAccounts = await prisma.socialAccount.findMany({
-      where: { teamId, isActive: true }, select: { id: true, platform: true, name: true },
+      where: { teamId, isActive: true }, select: { id: true, platform: true, name: true, platformId: true, accessToken: true },
     });
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Data normalizada sem horário
+
+    // Coleta on-demand caso o banco esteja vazio ou não tenha o registro de hoje
+    for (const account of socialAccounts) {
+      if (!account.accessToken) continue;
+
+      const hasTodayAnalytics = await prisma.analytics.findFirst({
+        where: {
+          socialAccountId: account.id,
+          date: today,
+        },
+      });
+
+      if (!hasTodayAnalytics) {
+        const appId = process.env.META_APP_ID;
+        const appSecret = process.env.META_APP_SECRET;
+        let provider = null;
+
+        if (account.platform === "FACEBOOK" && appId && appSecret) {
+          provider = new FacebookProvider(appId, appSecret);
+        } else if (account.platform === "INSTAGRAM" && appId && appSecret) {
+          provider = new InstagramProvider(appId, appSecret);
+        }
+
+        if (provider) {
+          try {
+            const metrics = await provider.getAnalytics(account.accessToken, account.platformId);
+            
+            await prisma.analytics.upsert({
+              where: {
+                socialAccountId_date: {
+                  socialAccountId: account.id,
+                  date: today,
+                },
+              },
+              update: {
+                ...metrics,
+              },
+              create: {
+                socialAccountId: account.id,
+                date: today,
+                ...metrics,
+              },
+            });
+          } catch (err) {
+            console.error(`[ANALYTICS SYNC ERROR] Falha ao coletar métricas para ${account.name}:`, err);
+          }
+        }
+      }
+    }
+
     const records = await prisma.analytics.findMany({
       where: { socialAccountId: { in: socialAccounts.map((account) => account.id) } },
       orderBy: { date: "asc" },
       take: 30,
       include: { socialAccount: { select: { platform: true } } },
     });
+
     const summary = records.reduce((total, record) => ({
       followers: total.followers + record.followers,
       reach: total.reach + record.reach,
       engagement: total.engagement + record.engagement,
       shares: total.shares + record.shares,
     }), { followers: 0, reach: 0, engagement: 0, shares: 0 });
+
     return NextResponse.json({ summary, records, connectedAccounts: socialAccounts });
   } catch (error) {
     const result = apiErrorResponse(error);
