@@ -197,9 +197,10 @@ export default function DashboardPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
+            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
             gap: "16px",
           }}
+          className="mobile-stack"
         >
           <MetricCard
             title="Contas Conectadas"
@@ -236,7 +237,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Charts Row */}
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "16px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "16px" }} className="mobile-stack">
           {/* Engagement Chart */}
           <div
             style={{
@@ -351,7 +352,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Bottom Row */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }} className="mobile-stack">
           {/* Top Posts */}
           <div
             style={{

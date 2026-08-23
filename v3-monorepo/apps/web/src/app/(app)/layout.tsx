@@ -37,7 +37,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <TeamProvider teamId={teamId}>
-      <div style={{ display: "flex", minHeight: "100vh" }}>
+      <div style={{ display: "flex", minHeight: "100dvh" }}>
         <Sidebar />
         <div
           style={{
@@ -45,9 +45,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             flex: 1,
             display: "flex",
             flexDirection: "column",
-            minHeight: "100vh",
+            minHeight: "100dvh",
             background: "var(--bg-primary)",
           }}
+          className="mobile-full"
         >
           {children}
         </div>

@@ -222,6 +222,10 @@ export class InstagramProvider implements SocialProvider {
       return { success: false, error: "Reel aceita apenas um vídeo por publicação." };
     }
 
+    if (postType === "REEL" && mediaUrls[0]?.type !== "VIDEO") {
+      return { success: false, error: "Reel no Instagram precisa ser vídeo. Use Post ou Story para imagem." };
+    }
+
     if (postType === "CAROUSEL" && mediaUrls.length < 2) {
       return { success: false, error: "Carrossel precisa de pelo menos 2 mídias." };
     }
@@ -251,23 +255,40 @@ export class InstagramProvider implements SocialProvider {
 
       if (postType === "CAROUSEL" || mediaUrls.length > 1) {
         const children: string[] = [];
-        for (const [index, media] of mediaUrls.entries()) {
+        for (const media of mediaUrls) {
           const childParams = new URLSearchParams({
             access_token: accessToken,
-            caption: index === 0 ? content : "",
+            is_carousel_item: "true",
           });
-          if (media.type === "VIDEO") childParams.set("video_url", media.url);
-          else childParams.set("image_url", media.url);
+          
+          if (media.type === "VIDEO") {
+            childParams.set("media_type", "VIDEO");
+            childParams.set("video_url", media.url);
+          } else {
+            childParams.set("image_url", media.url);
+          }
+          
           const childResponse = await fetch(`${GRAPH_API}/${platformId}/media`, { method: "POST", body: childParams });
           if (!childResponse.ok) {
             const error = await childResponse.json().catch(() => ({}));
             return { success: false, error: error?.error?.message || "Falha ao criar container filho no Instagram." };
           }
           const childData = await childResponse.json() as { id: string };
+          
+          // Se for vídeo, precisamos esperar o container ficar pronto (FINISHED) antes de anexar ao carrossel
+          if (media.type === "VIDEO") {
+            const ready = await this.waitForContainerReady(childData.id, accessToken);
+            if (!ready.success) return ready;
+          }
+          
           children.push(childData.id);
         }
+        // O Instagram espera um array com as strings dos IDs dos filhos.
         const parentParams = new URLSearchParams({ access_token: accessToken, caption: content, media_type: "CAROUSEL" });
-        children.forEach((id) => parentParams.append("children", id));
+        // Na Fetch API / URLSearchParams, append do mesmo nome repetido nem sempre é aceito pelo Graph API.
+        // É melhor enviar children como uma string separada por vírgulas, ou usar a notação de array que o Facebook aceita:
+        parentParams.append("children", children.join(","));
+        
         const parentResponse = await fetch(`${GRAPH_API}/${platformId}/media`, { method: "POST", body: parentParams });
         if (!parentResponse.ok) {
           const error = await parentResponse.json().catch(() => ({}));
@@ -289,6 +310,10 @@ export class InstagramProvider implements SocialProvider {
         return { success: false, error: error?.error?.message || "Falha ao criar container de mídia no Instagram." };
       }
       const { id: creationId } = await containerResponse.json() as { id: string };
+
+      const ready = await this.waitForContainerReady(creationId, accessToken);
+      if (!ready.success) return ready;
+
       const publishResponse = await fetch(`${GRAPH_API}/${platformId}/media_publish`, {
         method: "POST",
         body: new URLSearchParams({ creation_id: creationId, access_token: accessToken }),
@@ -299,6 +324,33 @@ export class InstagramProvider implements SocialProvider {
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : "Erro desconhecido ao publicar no Instagram." };
     }
+  }
+
+  private async waitForContainerReady(creationId: string, accessToken: string): Promise<PublishResult> {
+    const maxAttempts = 24; // Esperar até 60 segundos (24 * 2.5s)
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const response = await fetch(`${GRAPH_API}/${creationId}?${new URLSearchParams({
+        fields: "status_code,status",
+        access_token: accessToken,
+      })}`);
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        return { success: false, error: error?.error?.message || "Falha ao verificar o status do container do Instagram." };
+      }
+
+      const data = await response.json() as { status_code?: string; status?: string };
+      const status = data.status_code || data.status;
+      if (status === "FINISHED") return { success: true };
+      if (status === "ERROR") {
+        console.error("[INSTAGRAM REEL/CAROUSEL ERROR] Meta rejeitou a mídia. Resposta da API:", JSON.stringify(data, null, 2));
+        return { success: false, error: "O Instagram rejeitou o container de mídia." };
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+    }
+
+    return { success: false, error: "O container do Instagram demorou para ficar pronto. A mídia pode ainda estar sendo processada pela Meta." };
   }
 
   async getAnalytics(accessToken: string, platformId: string): Promise<AnalyticsSnapshot> {

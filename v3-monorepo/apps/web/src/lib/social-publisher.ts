@@ -1,5 +1,6 @@
 import { Platform, PostStatus, prisma } from "@marklabs/database";
 import { FacebookProvider, InstagramProvider, LinkedInProvider, PublishInput } from "@marklabs/social";
+import { resolveR2MediaUrl } from "@/lib/r2";
 
 function resolveMediaUrl(url: string) {
   if (/^https?:\/\//i.test(url)) return url;
@@ -49,10 +50,12 @@ export async function publishPost(postId: string) {
   const input: PublishInput = {
     content: post.content,
     postType: post.postType as "POST" | "REEL" | "STORY" | "CAROUSEL",
-    media: (post.media as Array<{ url: string; type: "IMAGE" | "VIDEO" }>).map((media) => ({
-      url: resolveMediaUrl(media.url),
-      type: media.type,
-    })),
+    media: await Promise.all(
+      (post.media as Array<{ url: string; type: "IMAGE" | "VIDEO" }>).map(async (media) => ({
+        url: await resolveR2MediaUrl(resolveMediaUrl(media.url)),
+        type: media.type,
+      }))
+    ),
   };
 
   await prisma.post.update({

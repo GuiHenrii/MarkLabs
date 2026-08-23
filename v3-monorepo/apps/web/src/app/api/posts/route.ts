@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma, PostStatus } from "@marklabs/database";
 import { apiErrorResponse, requireTeamAccess } from "@/lib/authorization";
+import { publishPost } from "@/lib/social-publisher";
 import { z } from "zod";
 
 function isMediaUrl(value: string) {
@@ -13,6 +14,8 @@ function isMediaUrl(value: string) {
     return false;
   }
 }
+
+export const maxDuration = 120; // Permite até 2 minutos, útil para upload de vídeos para a Meta
 
 export async function POST(request: Request) {
   try {
@@ -69,8 +72,21 @@ export async function POST(request: Request) {
     });
 
     if (isPublishNow) {
-      const { postQueue } = await import("@/lib/queue");
-      await postQueue.add("publish-post", { postId: result.post.id, teamId });
+      await publishPost(result.post.id);
+      const publishedPost = await prisma.post.findUnique({
+        where: { id: result.post.id },
+        include: {
+          socialAccount: { select: { name: true, platform: true, avatar: true } },
+          author: { select: { name: true, image: true } },
+          media: true,
+        },
+      });
+      
+      if (publishedPost?.status === "FAILED") {
+        return NextResponse.json({ error: publishedPost.errorMessage || "Falha ao publicar." }, { status: 400 });
+      }
+      
+      return NextResponse.json(publishedPost, { status: 201 });
     }
 
     return NextResponse.json(result, { status: 201 });

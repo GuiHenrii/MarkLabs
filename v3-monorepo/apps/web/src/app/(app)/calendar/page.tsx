@@ -22,6 +22,14 @@ const typeConfig: Record<string, { label: string; color: string; icon: React.Ele
   CAROUSEL: { label: "Carrossel", color: "#0ea5e9", icon: FileText },
 };
 
+const platformColors: Record<string, string> = {
+  INSTAGRAM: "#e1306c",
+  FACEBOOK: "#1877f2",
+  LINKEDIN: "#0a66c2",
+  YOUTUBE: "#ff0000",
+  TIKTOK: "#010101",
+};
+
 const DAYS_OF_WEEK = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const MONTHS = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
@@ -72,7 +80,7 @@ export default function CalendarPage() {
   const todayKey = formatDateKey(now.getFullYear(), now.getMonth(), now.getDate());
 
   const transformedPosts = posts.map((post: any) => {
-    const dateObj = post.scheduledAt ? new Date(post.scheduledAt) : post.publishedAt ? new Date(post.publishedAt) : new Date();
+    const dateObj = post.scheduledAt ? new Date(post.scheduledAt) : post.publishedAt ? new Date(post.publishedAt) : new Date(post.createdAt || Date.now());
     const dateKey = formatDateKey(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
     const timeStr = dateObj.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     return {
@@ -111,14 +119,6 @@ export default function CalendarPage() {
     } else {
       setCurrentMonth((m) => m + 1);
     }
-  };
-
-  const platformColors: Record<string, string> = {
-    INSTAGRAM: "#e1306c",
-    FACEBOOK: "#1877f2",
-    LINKEDIN: "#0a66c2",
-    YOUTUBE: "#ff0000",
-    TIKTOK: "#010101",
   };
 
   return (

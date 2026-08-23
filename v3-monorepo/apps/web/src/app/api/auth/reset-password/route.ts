@@ -46,12 +46,10 @@ export async function POST(request: Request) {
       .digest("hex");
 
     // Verificar token
-    const verificationToken = await prisma.verificationToken.findUnique({
+    const verificationToken = await prisma.verificationToken.findFirst({
       where: {
-        identifier_token: {
-          identifier: user.id,
-          token: tokenHash,
-        },
+        identifier: user.id,
+        token: tokenHash,
       },
     });
 
@@ -65,12 +63,10 @@ export async function POST(request: Request) {
     // Verificar se token expirou
     if (new Date() > verificationToken.expires) {
       // Deletar token expirado
-      await prisma.verificationToken.delete({
+      await prisma.verificationToken.deleteMany({
         where: {
-          identifier_token: {
-            identifier: user.id,
-            token: tokenHash,
-          },
+          identifier: user.id,
+          token: tokenHash,
         },
       });
 
@@ -92,12 +88,10 @@ export async function POST(request: Request) {
     });
 
     // Deletar token usado
-    await prisma.verificationToken.delete({
+    await prisma.verificationToken.deleteMany({
       where: {
-        identifier_token: {
-          identifier: user.id,
-          token: tokenHash,
-        },
+        identifier: user.id,
+        token: tokenHash,
       },
     });
 

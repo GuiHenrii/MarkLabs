@@ -174,7 +174,7 @@ export default function LoginPage() {
   return (
     <div
       style={{
-        minHeight: "100vh",
+        minHeight: "100dvh",
         background: "var(--bg-primary)",
         display: "flex",
         alignItems: "center",
@@ -680,7 +680,7 @@ export default function LoginPage() {
             onClick={(e) => e.stopPropagation()}
             style={{
               width: "min(720px, 100%)",
-              maxHeight: "85vh",
+              maxHeight: "85dvh",
               overflowY: "auto",
               background: "var(--bg-card)",
               border: "1px solid var(--border)",

@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Search, Plus } from "lucide-react";
+import { Bell, Search, Plus, Menu } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -37,7 +37,29 @@ export function Topbar({ title, subtitle }: TopbarProps) {
         top: 0,
         zIndex: 30,
       }}
+      className="mobile-topbar mobile-tight"
     >
+      <button
+        type="button"
+        onClick={() => window.dispatchEvent(new Event("marklabs:toggle-sidebar"))}
+        aria-label="Abrir menu"
+        style={{
+          display: "none",
+          width: "40px",
+          height: "40px",
+          borderRadius: "10px",
+          border: "1px solid var(--border)",
+          background: "var(--bg-card)",
+          color: "var(--text-primary)",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+        }}
+        className="mobile-menu-button"
+      >
+        <Menu size={18} />
+      </button>
+
       {/* Title */}
       <div style={{ flex: 1 }}>
         <h1
@@ -72,6 +94,7 @@ export function Topbar({ title, subtitle }: TopbarProps) {
           cursor: "text",
           transition: "border-color 0.15s ease",
         }}
+        className="mobile-hide-sm"
       >
         <Search size={14} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
         <input
@@ -112,13 +135,14 @@ export function Topbar({ title, subtitle }: TopbarProps) {
           transition: "all 0.15s ease",
           whiteSpace: "nowrap",
         }}
+        className="mobile-hide-sm"
       >
         <Plus size={15} />
         Novo Post
       </Link>
 
       {/* Notifications */}
-      <div style={{ position: "relative" }}>
+      <div style={{ position: "relative" }} className="mobile-hide-sm">
         <button
           onClick={() => setShowNotifications(!showNotifications)}
           style={{

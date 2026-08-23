@@ -18,6 +18,29 @@ function log(level: "INFO" | "WARN" | "ERROR", message: string, meta?: Record<st
   console.log(JSON.stringify({ timestamp: new Date().toISOString(), level, service: "marklabs-worker", message, ...meta }));
 }
 
+async function resolveR2MediaUrl(url: string) {
+  if (!url || !url.includes("r2")) return url;
+  try {
+    const { GetObjectCommand, S3Client } = await import("@aws-sdk/client-s3");
+    const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
+    const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+    const accessKeyId = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY;
+    const bucketName = process.env.CLOUDFLARE_R2_BUCKET_NAME || "marklabs";
+    if (!accountId || !accessKeyId || !secretAccessKey) return url;
+    const client = new S3Client({
+      region: "auto",
+      endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+      credentials: { accessKeyId, secretAccessKey },
+    });
+    const parsed = new URL(url);
+    const key = parsed.pathname.replace(/^\/+/, "");
+    return await getSignedUrl(client, new GetObjectCommand({ Bucket: bucketName, Key: key }), { expiresIn: 60 * 30 });
+  } catch {
+    return url;
+  }
+}
+
 async function publishPost(postId: string) {
   const post = (await prisma.post.findUnique({
     where: { id: postId },
@@ -47,10 +70,12 @@ async function publishPost(postId: string) {
   const result = await provider.publish(post.socialAccount.accessToken, post.socialAccount.platformId, {
     content: post.content,
     postType: post.postType as "POST" | "REEL" | "STORY" | "CAROUSEL",
-    media: (post.media as Array<{ url: string; type: "IMAGE" | "VIDEO" }>).map((media) => ({
-      url: media.url,
-      type: media.type,
-    })),
+    media: await Promise.all(
+      (post.media as Array<{ url: string; type: "IMAGE" | "VIDEO" }>).map(async (media) => ({
+        url: await resolveR2MediaUrl(media.url),
+        type: media.type,
+      }))
+    ),
   });
   if (!result.success) throw new Error(result.error || "A publicação falhou.");
   await prisma.post.update({ where: { id: post.id }, data: { status: PostStatus.PUBLISHED, platformPostId: result.providerPostId, publishedAt: new Date(), errorMessage: null } });
@@ -148,6 +173,33 @@ async function refreshAnalytics() {
   }
 }
 
+async function publishDuePosts(limit = 20) {
+  const duePosts = await prisma.post.findMany({
+    where: {
+      status: PostStatus.SCHEDULED,
+      scheduledAt: { lte: new Date() },
+    },
+    take: limit,
+    orderBy: { scheduledAt: "asc" },
+    select: { id: true },
+  });
+
+  for (const item of duePosts) {
+    try {
+      log("INFO", "Publishing scheduled post", { postId: item.id });
+      await publishPost(item.id);
+    } catch (error) {
+      log("ERROR", "Failed to publish scheduled post", {
+        postId: item.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      Sentry.captureException(error, {
+        extra: { postId: item.id, source: "scheduled-publish" },
+      });
+    }
+  }
+}
+
 // Criar o Worker do BullMQ para processar publicações de posts
 const worker = new Worker(
   "PostQueue",
@@ -182,10 +234,20 @@ refreshAnalytics().catch((error) => {
   log("ERROR", "Initial analytics refresh failed", { error: error instanceof Error ? error.message : String(error) });
 });
 
+publishDuePosts().catch((error) => {
+  log("ERROR", "Initial scheduled publish failed", { error: error instanceof Error ? error.message : String(error) });
+});
+
 setInterval(() => {
   refreshAnalytics().catch((error) => {
     log("ERROR", "Scheduled analytics refresh failed", { error: error instanceof Error ? error.message : String(error) });
   });
 }, ANALYTICS_REFRESH_MS);
+
+setInterval(() => {
+  publishDuePosts().catch((error) => {
+    log("ERROR", "Scheduled publish run failed", { error: error instanceof Error ? error.message : String(error) });
+  });
+}, 60_000);
 
 export default worker;

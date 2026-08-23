@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   LayoutDashboard,
   Calendar,
@@ -35,12 +36,29 @@ const bottomItems = [{ href: "/settings", icon: Settings, label: "Configuraçõe
 export function Sidebar() {
   const pathname = usePathname();
   const { theme, toggleTheme } = useTheme();
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    const open = () => setMobileOpen((value) => !value);
+    const close = () => setMobileOpen(false);
+
+    window.addEventListener("marklabs:toggle-sidebar", open as EventListener);
+    window.addEventListener("marklabs:close-sidebar", close as EventListener);
+    return () => {
+      window.removeEventListener("marklabs:toggle-sidebar", open as EventListener);
+      window.removeEventListener("marklabs:close-sidebar", close as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
 
   return (
     <aside
       style={{
         width: "240px",
-        minHeight: "100vh",
+        minHeight: "100dvh",
         background: "var(--bg-secondary)",
         borderRight: "1px solid var(--border)",
         display: "flex",
@@ -51,7 +69,22 @@ export function Sidebar() {
         bottom: 0,
         zIndex: 40,
       }}
+      className="mobile-drawer"
+      data-open={mobileOpen ? "true" : "false"}
     >
+      <div
+        aria-hidden="true"
+        onClick={() => setMobileOpen(false)}
+        className="mobile-drawer-backdrop"
+        style={{
+          display: "none",
+          position: "fixed",
+          inset: 0,
+          left: "min(88vw, 320px)",
+          background: "rgba(0,0,0,0.45)",
+          zIndex: -1,
+        }}
+      />
       <div
         style={{
           padding: "20px 20px 16px",

@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma, MediaType } from "@marklabs/database";
 import { apiErrorResponse, requireTeamAccess } from "@/lib/authorization";
-import { uploadToR2 } from "@/lib/r2";
-
-function getMediaUrl(teamId: string, id: string): string {
-  return `/api/media/${id}/file?teamId=${encodeURIComponent(teamId)}`;
-}
+import { getR2PublicUrl, uploadToR2 } from "@/lib/r2";
 
 export async function POST(request: Request) {
   try {
@@ -23,12 +19,13 @@ export async function POST(request: Request) {
       const tags = String(formData.get("tags") || "").split(",").map((tag) => tag.trim()).filter(Boolean).slice(0, 20);
       const key = String(formData.get("key") || `marklabs/${teamId}/${folder}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 80)}`);
       await uploadToR2(file, key);
+      const publicUrl = getR2PublicUrl(key);
 
       const media = await prisma.mediaFile.create({
         data: {
           teamId,
           name: file.name.slice(0, 255),
-          url: getMediaUrl(teamId, key),
+          url: publicUrl,
           publicId: key,
           type: file.type.startsWith("video/") ? MediaType.VIDEO : MediaType.IMAGE,
           size: file.size,
@@ -39,7 +36,7 @@ export async function POST(request: Request) {
         },
       });
 
-      return NextResponse.json({ ...media, url: getMediaUrl(teamId, media.id) }, { status: 201 });
+      return NextResponse.json({ ...media, url: publicUrl }, { status: 201 });
     }
 
     const body = await request.json();
@@ -62,7 +59,7 @@ export async function POST(request: Request) {
       data: {
         teamId,
         name: name.slice(0, 255),
-        url: url || getMediaUrl(teamId, publicId),
+        url: url || getR2PublicUrl(publicId),
         publicId,
         type: type.startsWith("video/") ? MediaType.VIDEO : MediaType.IMAGE,
         size,
@@ -73,7 +70,7 @@ export async function POST(request: Request) {
       },
     });
 
-    return NextResponse.json({ ...media, url: getMediaUrl(teamId, media.id) }, { status: 201 });
+    return NextResponse.json({ ...media, url: media.url }, { status: 201 });
   } catch (error) {
     const result = apiErrorResponse(error);
     return NextResponse.json({ error: result.error }, { status: result.status });
@@ -86,7 +83,7 @@ export async function GET(request: Request) {
   try {
     await requireTeamAccess(teamId);
     const items = await prisma.mediaFile.findMany({ where: { teamId }, orderBy: { createdAt: "desc" } });
-    return NextResponse.json(items.map((item) => ({ ...item, url: getMediaUrl(teamId, item.id) })));
+    return NextResponse.json(items);
   } catch (error) {
     const result = apiErrorResponse(error);
     return NextResponse.json({ error: result.error }, { status: result.status });

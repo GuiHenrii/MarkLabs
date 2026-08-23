@@ -1,159 +1,31 @@
-# Turborepo starter
+# MarkLabs - Social Media Manager
 
-This Turborepo starter is maintained by the Turborepo core team.
+Plataforma unificada para gerenciamento, agendamento e publicação de conteúdos nas redes sociais, com suporte a fluxos avançados de automação e integração com a API da OpenAI.
 
-## Using this example
+## 🚀 Versão atual: v1 0.0.4
 
-Run the following command:
+### O que há de novo na v0.0.4 (Test v1)
+Nesta atualização, focamos em estabilizar o motor de publicações para o Instagram e Meta, resolvendo gargalos na comunicação com a Graph API.
 
-```sh
-npx create-turbo@latest
-```
+* **Fix do Carrossel do Instagram**: Corrigido o envio do parâmetro `children` para criação de carrosseis no Instagram. A API requeria um array unificado (comma-separated), o que causava `Invalid parameter` ao tentar agrupar mídias num post só.
+* **Resolução de Mídias via Cloudflare R2**: Restauramos o uso de URLs Assinadas (Presigned URLs) no envio para o Facebook/Instagram. O envio de URLs brutas `.r2.dev` causava bloqueio (HTTP 403 / Bot Protection) nos servidores do Cloudflare durante a requisição dos robôs da Meta.
+* **Melhoria no Timeout de Processamento de Vídeos (Reels/Carrossel)**: 
+  * Aumentado o `maxAttempts` do polling de status de containers de mídia no provedor Instagram para aguentar até 60 segundos de processamento.
+  * Aumentado o `maxDuration` das rotas de API do Next.js para até 2 minutos (`maxDuration = 120`), prevenindo timeouts prematuros quando o Instagram demora para transcodificar vídeos pesados.
+* **Feedback Visual de Publicação Instantânea**: Corrigido um falso positivo na tela de `Composer`. Anteriormente, se a Graph API rejeitasse um conteúdo no ato da publicação, a API backend ainda retornava código HTTP `201`, fazendo a tela ficar "verde". Agora o backend lança corretamente um erro `400` contendo o `errorMessage` exato da plataforma.
+* **Logs Detalhados para Debug**: Adicionado payload de erro da Meta nos logs do terminal para facilitar a depuração de rejeições de formato de vídeo ou container.
 
-## What's inside?
+### Funcionalidades do Sistema
+* Gerenciamento de Múltiplas Contas Sociais (Instagram, Facebook, LinkedIn, TikTok, YouTube).
+* Interface rica de criação de Posts, Carrosseis, Reels e Stories.
+* Agendamento de posts com calendário interativo integrado.
+* Integração nativa com Storage (Cloudflare R2).
+* Suporte nativo para múltiplos Workspaces/Times.
 
-This Turborepo includes the following packages/apps:
-
-### Apps and Packages
-
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
-
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Utilities
-
-This Turborepo has some additional tools already setup for you:
-
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo build
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo build
-npm dlx turbo build
-npm exec turbo build
-```
-
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo build --filter=docs
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo build --filter=docs
-npm exec turbo build --filter=docs
-npm exec turbo build --filter=docs
-```
-
-### Develop
-
-To develop all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo dev
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo dev
-npm exec turbo dev
-npm exec turbo dev
-```
-
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo dev --filter=web
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo dev --filter=web
-npm exec turbo dev --filter=web
-npm exec turbo dev --filter=web
-```
-
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo login
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo login
-npm exec turbo login
-npm exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo link
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo link
-npm exec turbo link
-npm exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+## 🛠️ Tecnologias
+- **Frontend / Backend**: Next.js 14+ (App Router), Turborepo
+- **Banco de Dados**: Prisma ORM, PostgreSQL (Neon)
+- **Autenticação**: NextAuth.js
+- **Armazenamento de Mídia**: Cloudflare R2 / AWS S3
+- **Estilização**: Tailwind CSS + UI Components
+- **Fila/Jobs (Agendamento)**: Upstash Redis (QStash)
