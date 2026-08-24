@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useRef, useState, useEffect } from "react";
 import { Upload, Search, Grid3x3, List, Video, Folder, MoreHorizontal, Plus, X, ExternalLink, Download, Check, Loader2 } from "lucide-react";
@@ -102,6 +102,42 @@ export default function MediaPage() {
       }
     } catch (e) {
       alert("Erro ao apagar a mídia.");
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedMedia.length === 0) return;
+    if (!window.confirm(`Tem certeza que deseja apagar as ${selectedMedia.length} mídias selecionadas?`)) return;
+    setLoading(true);
+    try {
+      const results = await Promise.all(
+        selectedMedia.map(async (id) => {
+          const res = await fetch(`/api/media/${id}?teamId=${teamId}`, { method: "DELETE" });
+          return { id, ok: res.ok };
+        })
+      );
+      
+      const successfulIds = results.filter(r => r.ok).map(r => r.id);
+      setMediaList((prev) => prev.filter((m) => !successfulIds.includes(m.id)));
+      setSelectedMedia((prev) => prev.filter((id) => !successfulIds.includes(id)));
+      
+      if (successfulIds.length < selectedMedia.length) {
+        alert("Algumas mídias não puderam ser apagadas.");
+      }
+    } catch (e) {
+      alert("Erro ao executar a exclusão em lote.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSelectAll = () => {
+    const filteredIds = filtered.map((m) => m.id);
+    const allSelected = filteredIds.every((id) => selectedMedia.includes(id));
+    if (allSelected) {
+      setSelectedMedia((prev) => prev.filter((id) => !filteredIds.includes(id)));
+    } else {
+      setSelectedMedia((prev) => Array.from(new Set([...prev, ...filteredIds])));
     }
   };
 
@@ -258,13 +294,64 @@ export default function MediaPage() {
               ))}
             </div>
 
+            <button
+              onClick={handleSelectAll}
+              id="select-all-btn"
+              style={{
+                height: "36px",
+                padding: "0 12px",
+                background: "var(--bg-card)",
+                border: "1px solid var(--border)",
+                borderRadius: "9px",
+                color: "var(--text-secondary)",
+                fontSize: "12px",
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "5px",
+                transition: "all 0.15s ease"
+              }}
+            >
+              {filtered.length > 0 && filtered.map((m) => m.id).every((id) => selectedMedia.includes(id))
+                ? "Desmarcar Todas"
+                : "Selecionar Todas"}
+            </button>
+
             {selectedMedia.length > 0 && (
-              <button
-                onClick={() => setSelectedMedia([])}
-                style={{ padding: "6px 12px", background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", color: "#ef4444", fontSize: "12px", cursor: "pointer" }}
-              >
-                Cancelar ({selectedMedia.length})
-              </button>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button
+                  onClick={handleBatchDelete}
+                  id="batch-delete-btn"
+                  style={{
+                    padding: "6px 12px",
+                    background: "#ef4444",
+                    border: "none",
+                    borderRadius: "8px",
+                    color: "#fff",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    boxShadow: "0 2px 8px rgba(239,68,68,0.2)"
+                  }}
+                >
+                  Excluir Selecionadas ({selectedMedia.length})
+                </button>
+                <button
+                  onClick={() => setSelectedMedia([])}
+                  style={{
+                    padding: "6px 12px",
+                    background: "var(--bg-secondary)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "8px",
+                    color: "var(--text-secondary)",
+                    fontSize: "12px",
+                    cursor: "pointer"
+                  }}
+                >
+                  Cancelar
+                </button>
+              </div>
             )}
 
             <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>{filtered.length} arquivo{filtered.length !== 1 ? "s" : ""}</span>

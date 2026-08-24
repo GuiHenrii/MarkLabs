@@ -71,14 +71,21 @@ export async function GET(request: Request) {
       include: { socialAccount: { select: { platform: true } } },
     });
 
+    const latestFollowers = new Map<string, number>();
+    records.forEach(record => {
+      latestFollowers.set(record.socialAccountId, record.followers);
+    });
+    const currentFollowers = Array.from(latestFollowers.values()).reduce((sum, val) => sum + val, 0);
+
     const summary = records.reduce((total, record) => ({
-      followers: total.followers + record.followers,
       reach: total.reach + record.reach,
       engagement: total.engagement + record.engagement,
       shares: total.shares + record.shares,
-    }), { followers: 0, reach: 0, engagement: 0, shares: 0 });
+    }), { reach: 0, engagement: 0, shares: 0 });
 
-    return NextResponse.json({ summary, records, connectedAccounts: socialAccounts });
+    const finalSummary = { ...summary, followers: currentFollowers };
+
+    return NextResponse.json({ summary: finalSummary, records, connectedAccounts: socialAccounts });
   } catch (error) {
     const result = apiErrorResponse(error);
     return NextResponse.json({ error: result.error }, { status: result.status });

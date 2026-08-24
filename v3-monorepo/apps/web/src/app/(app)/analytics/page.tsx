@@ -1,243 +1,60 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import {
-  AreaChart,
-  Area,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-} from "recharts";
-import { TrendingUp, Users, Eye, Heart, Share2, Download } from "lucide-react";
+import { useState } from "react";
 import { Topbar } from "@/components/layout/Topbar";
-import { formatNumber } from "@/lib/utils";
-import { useTeam } from "@/components/providers/TeamProvider";
+import { OrganicAnalytics } from "./components/OrganicAnalytics";
+import { AdsAnalytics } from "./components/AdsAnalytics";
+import { BarChart2, Zap } from "lucide-react";
 
-const tooltipStyle = {
-  background: "var(--bg-card)",
-  border: "1px solid var(--border)",
-  borderRadius: "10px",
-  padding: "10px 14px",
-  fontSize: "12px",
-  color: "var(--text-primary)",
-  boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
-};
-
-const periods = ["7 dias", "30 dias", "90 dias", "6 meses"];
-
-type AnalyticsAccount = { platform: string };
-type AnalyticsRecord = { date: string; reach: number; socialAccount?: { platform?: string } };
-type AnalyticsPayload = {
-  summary: { followers: number; reach: number; engagement: number; shares: number };
-  records: AnalyticsRecord[];
-  connectedAccounts: AnalyticsAccount[];
-};
-
-export default function AnalyticsPage() {
-  const { teamId } = useTeam();
-  const [period, setPeriod] = useState("30 dias");
-  const [analytics, setAnalytics] = useState<AnalyticsPayload | null>(null);
-
-  useEffect(() => {
-    if (!teamId) return;
-
-    fetch(`/api/analytics?teamId=${teamId}`)
-      .then((response) => (response.ok ? response.json() : Promise.reject(new Error("Falha ao carregar analytics"))))
-      .then(setAnalytics)
-      .catch((error) => console.error("Erro ao carregar analytics:", error));
-  }, [teamId]);
-
-  const summary = analytics?.summary ?? { followers: 0, reach: 0, engagement: 0, shares: 0 };
-
-  const reachData = useMemo(() => {
-    const records = analytics?.records ?? [];
-    const rows = new Map<string, { date: string; instagram: number; facebook: number; linkedin: number }>();
-
-    for (const record of records) {
-      const date = new Date(record.date).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
-      const current = rows.get(date) ?? { date, instagram: 0, facebook: 0, linkedin: 0 };
-      const platform = String(record.socialAccount?.platform ?? "").toLowerCase();
-
-      if (platform === "instagram") current.instagram += record.reach ?? 0;
-      if (platform === "facebook") current.facebook += record.reach ?? 0;
-      if (platform === "linkedin") current.linkedin += record.reach ?? 0;
-
-      rows.set(date, current);
-    }
-
-    return [...rows.values()].slice(-7);
-  }, [analytics]);
-
-  const pieData = useMemo(() => {
-    const counts = (analytics?.connectedAccounts ?? []).reduce<Record<string, number>>((acc, account) => {
-      const key = String(account.platform ?? "").toLowerCase();
-      acc[key] = (acc[key] ?? 0) + 1;
-      return acc;
-    }, {});
-
-    const total = Object.values(counts).reduce<number>((sum, value) => sum + value, 0);
-    if (!total) return [];
-
-    return [
-      { name: "Instagram", value: Math.round(((counts.instagram ?? 0) / total) * 100), color: "#e1306c" },
-      { name: "Facebook", value: Math.round(((counts.facebook ?? 0) / total) * 100), color: "#1877f2" },
-      { name: "LinkedIn", value: Math.round(((counts.linkedin ?? 0) / total) * 100), color: "#0a66c2" },
-    ].filter((item) => item.value > 0);
-  }, [analytics]);
-
-  const topHashtags: Array<{ tag: string; posts: number; reach: number }> = [];
+export default function UnifiedAnalyticsPage() {
+  const [activeTab, setActiveTab] = useState<"organic" | "ads">("organic");
 
   return (
     <>
-      <div className="print-header" style={{ display: "none" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "20px" }}>
-          <div style={{ width: "40px", height: "40px", background: "#ea580c", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: "bold", fontSize: "20px" }}>
-            M
-          </div>
-          <div>
-            <h1 style={{ margin: 0, fontSize: "24px", color: "#ea580c" }}>MarkLabs</h1>
-            <p style={{ margin: 0, fontSize: "14px", color: "#666" }}>Relatório de Analytics - {period}</p>
-          </div>
-        </div>
-        <hr style={{ border: "none", borderTop: "2px solid #ea580c", marginBottom: "20px" }} />
-      </div>
-
       <div className="no-print">
-        <Topbar title="Analytics" subtitle="Métricas detalhadas das suas redes sociais" />
+        <Topbar 
+          title="Performance & Analytics" 
+          subtitle="Acompanhe o desempenho orgânico e das suas campanhas de tráfego pago" 
+        />
+        <div style={{ padding: "0 24px", paddingTop: "8px" }}>
+          <div style={{ display: "flex", gap: "10px", borderBottom: "1px solid var(--border)", marginBottom: "-1px" }}>
+            <button
+              onClick={() => setActiveTab("organic")}
+              style={{
+                display: "flex", alignItems: "center", gap: "8px",
+                padding: "12px 16px",
+                background: "transparent",
+                border: "none",
+                borderBottom: activeTab === "organic" ? "2px solid #ea580c" : "2px solid transparent",
+                color: activeTab === "organic" ? "var(--text-primary)" : "var(--text-muted)",
+                fontSize: "14px", fontWeight: activeTab === "organic" ? 600 : 500,
+                cursor: "pointer", transition: "all 0.2s ease"
+              }}
+            >
+              <BarChart2 size={16} style={{ color: activeTab === "organic" ? "#ea580c" : "inherit" }} />
+              Redes Sociais (Orgânico)
+            </button>
+            <button
+              onClick={() => setActiveTab("ads")}
+              style={{
+                display: "flex", alignItems: "center", gap: "8px",
+                padding: "12px 16px",
+                background: "transparent",
+                border: "none",
+                borderBottom: activeTab === "ads" ? "2px solid #00d4ff" : "2px solid transparent",
+                color: activeTab === "ads" ? "var(--text-primary)" : "var(--text-muted)",
+                fontSize: "14px", fontWeight: activeTab === "ads" ? 600 : 500,
+                cursor: "pointer", transition: "all 0.2s ease"
+              }}
+            >
+              <Zap size={16} style={{ color: activeTab === "ads" ? "#00d4ff" : "inherit" }} />
+              Meta Ads (Tráfego Pago)
+            </button>
+          </div>
+        </div>
       </div>
-
-      <main style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "24px", flex: 1 }} className="animate-fade-in print-content">
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", gap: "6px", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "10px", padding: "4px" }}>
-            {periods.map((p) => (
-              <button
-                key={p}
-                onClick={() => setPeriod(p)}
-                style={{
-                  padding: "7px 14px",
-                  borderRadius: "7px",
-                  border: "none",
-                  background: period === p ? "linear-gradient(135deg, #ea580c, #c2410c)" : "transparent",
-                  color: period === p ? "#fff" : "var(--text-muted)",
-                  fontSize: "13px",
-                  fontWeight: period === p ? 600 : 400,
-                  cursor: "pointer",
-                }}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-
-          <button
-            onClick={() => window.print()}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "7px",
-              padding: "9px 16px",
-              background: "linear-gradient(135deg, #ea580c, #c2410c)",
-              border: "none",
-              borderRadius: "10px",
-              color: "#fff",
-              fontSize: "13px",
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-            className="no-print"
-          >
-            <Download size={14} />
-            Exportar relatório em PDF
-          </button>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "14px" }}>
-          {[
-            { title: "Alcance Total", value: formatNumber(summary.reach), icon: Eye, color: "#ea580c" },
-            { title: "Novos Seguidores", value: formatNumber(summary.followers), icon: Users, color: "#9a3412" },
-            { title: "Engajamento Total", value: formatNumber(summary.engagement), icon: Heart, color: "#ec4899" },
-            { title: "Compartilhamentos", value: formatNumber(summary.shares), icon: Share2, color: "#f59e0b" },
-          ].map((kpi) => (
-            <div key={kpi.title} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "14px", padding: "18px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-                <p style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 500 }}>{kpi.title}</p>
-                <div style={{ width: "32px", height: "32px", borderRadius: "9px", background: `${kpi.color}18`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <kpi.icon size={14} style={{ color: kpi.color }} />
-                </div>
-              </div>
-              <p style={{ fontSize: "26px", fontWeight: 700, color: "var(--text-primary)" }}>{kpi.value}</p>
-              <div style={{ display: "flex", alignItems: "center", gap: "4px", marginTop: "4px" }}>
-                <TrendingUp size={11} style={{ color: "#10b981" }} />
-                <span style={{ fontSize: "11px", color: "#10b981", fontWeight: 600 }}>Atual</span>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "16px" }}>
-          <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "14px", padding: "20px" }}>
-            <h2 style={{ fontSize: "15px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "4px" }}>Alcance por Rede</h2>
-            <p style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "20px" }}>{period}</p>
-            <ResponsiveContainer width="100%" height={240}>
-              <AreaChart data={reachData}>
-                <defs>
-                  <linearGradient id="igReach" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#e1306c" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#e1306c" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="fbReach" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#1877f2" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#1877f2" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="liReach" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0a66c2" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#0a66c2" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="date" stroke="var(--text-muted)" fontSize={11} />
-                <YAxis stroke="var(--text-muted)" fontSize={11} tickFormatter={formatNumber} />
-                <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => formatNumber(v as number)} />
-                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: "12px" }} />
-                <Area type="monotone" dataKey="instagram" name="Instagram" stroke="#e1306c" fill="url(#igReach)" strokeWidth={2} dot={false} />
-                <Area type="monotone" dataKey="facebook" name="Facebook" stroke="#1877f2" fill="url(#fbReach)" strokeWidth={2} dot={false} />
-                <Area type="monotone" dataKey="linkedin" name="LinkedIn" stroke="#0a66c2" fill="url(#liReach)" strokeWidth={2} dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "14px", padding: "20px" }}>
-            <h2 style={{ fontSize: "15px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "4px" }}>Distribuição por Plataforma</h2>
-            <p style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "16px" }}>% das contas conectadas</p>
-            <ResponsiveContainer width="100%" height={180}>
-              <PieChart>
-                <Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value">
-                  {pieData.map((entry, index) => (
-                    <Cell key={index} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [`${v}%`, "Contas"]} />
-              </PieChart>
-            </ResponsiveContainer>
-            {pieData.length === 0 ? (
-              <p style={{ color: "var(--text-muted)", fontSize: "13px" }}>Nenhuma conta conectada ainda.</p>
-            ) : null}
-          </div>
-        </div>
-
-        <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "14px", padding: "20px" }}>
-          <h2 style={{ fontSize: "15px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "16px" }}>Top Hashtags</h2>
-          {topHashtags.length === 0 ? (
-            <p style={{ color: "var(--text-muted)", fontSize: "13px" }}>Ainda não há dados reais de hashtags disponíveis.</p>
-          ) : null}
-        </div>
-      </main>
+      
+      {activeTab === "organic" ? <OrganicAnalytics /> : <AdsAnalytics />}
     </>
   );
 }

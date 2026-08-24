@@ -20,7 +20,7 @@ export class InstagramProvider implements SocialProvider {
       client_id: this.clientId,
       redirect_uri: redirectUri,
       state,
-      scope: "instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement,pages_manage_metadata,business_management",
+      scope: "instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement,pages_manage_metadata,business_management,ads_read,ads_management",
       response_type: "code",
       auth_type: "rerequest",
       return_scopes: "true",

@@ -63,7 +63,7 @@ export class FacebookProvider implements SocialProvider {
       client_id: this.clientId, 
       redirect_uri: redirectUri, 
       state, 
-      scope: "pages_show_list,pages_read_engagement,pages_manage_metadata,pages_manage_posts,business_management", 
+      scope: "pages_show_list,pages_read_engagement,pages_manage_metadata,pages_manage_posts,business_management,ads_read,ads_management",
       response_type: "code",
       auth_type: "rerequest",
       return_scopes: "true",

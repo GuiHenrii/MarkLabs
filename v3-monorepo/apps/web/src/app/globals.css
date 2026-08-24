@@ -278,3 +278,249 @@ select {
 .status-published  { background: rgba(16, 185, 129, 0.15);  color: var(--success);  }
 .status-failed     { background: rgba(239, 68, 68, 0.15);   color: var(--danger);   }
 .status-publishing { background: rgba(59, 130, 246, 0.15);  color: var(--info);     }
+
+/* Oculto na tela — aparece somente no PDF */
+.print-header,
+.no-screen { display: none; }
+
+/* ─── Print / PDF Styles ─────────────────────────────────────────────────────── */
+@media print {
+  @page {
+    size: A4;
+    margin: 0;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #111827 !important;
+    font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .no-print { display: none !important; }
+  .no-screen { display: block !important; }
+  nav, aside, header { display: none !important; }
+
+  /* ── Page wrapper ── */
+  .print-content {
+    padding: 12px !important;
+    gap: 12px !important;
+    transform-origin: top left !important;
+    transform: scale(0.9) !important;
+    width: 111% !important; /* Compensate for scale */
+  }
+
+  /* ── Cover header ── */
+  .print-header {
+    display: block !important;
+    background: linear-gradient(135deg, #ea580c 0%, #c2410c 60%, #7c2d12 100%) !important;
+    padding: 24px 32px 20px !important;
+    page-break-after: avoid !important;
+  }
+
+  .print-logo-box {
+    display: flex !important;
+    align-items: center !important;
+    gap: 16px !important;
+    margin-bottom: 24px !important;
+  }
+
+  .print-logo-icon {
+    width: 52px !important;
+    height: 52px !important;
+    background: rgba(255,255,255,0.2) !important;
+    border-radius: 14px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 26px !important;
+    font-weight: 800 !important;
+    color: #ffffff !important;
+    letter-spacing: -1px !important;
+  }
+
+  .print-logo-text h1 {
+    font-size: 32px !important;
+    font-weight: 800 !important;
+    color: #ffffff !important;
+    margin: 0 0 4px !important;
+    letter-spacing: -1px !important;
+  }
+
+  .print-logo-text p {
+    font-size: 14px !important;
+    color: rgba(255,255,255,0.75) !important;
+    margin: 0 !important;
+  }
+
+  .print-header-meta {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: flex-end !important;
+    border-top: 1px solid rgba(255,255,255,0.25) !important;
+    padding-top: 20px !important;
+    margin-top: 20px !important;
+  }
+
+  .print-header-meta-label {
+    font-size: 11px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.1em !important;
+    color: rgba(255,255,255,0.6) !important;
+    margin-bottom: 4px !important;
+  }
+
+  .print-header-meta-value {
+    font-size: 15px !important;
+    font-weight: 700 !important;
+    color: #ffffff !important;
+  }
+
+  /* ── Content area ── */
+  .print-body {
+    padding: 20px 32px !important;
+    background: #ffffff !important;
+  }
+
+  /* ── Section label ── */
+  .print-section-title {
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.12em !important;
+    color: #ea580c !important;
+    margin-bottom: 14px !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+  }
+
+  .print-section-title::after {
+    content: '' !important;
+    flex: 1 !important;
+    height: 1px !important;
+    background: #e5e7eb !important;
+    display: block !important;
+  }
+
+  /* ── KPI cards ── */
+  .print-kpi-grid {
+    display: grid !important;
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 12px !important;
+    margin-bottom: 20px !important;
+  }
+
+  .print-kpi-card {
+    background: #f9fafb !important;
+    border: 1px solid #e5e7eb !important;
+    border-radius: 12px !important;
+    padding: 14px !important;
+    page-break-inside: avoid !important;
+    position: relative !important;
+    overflow: hidden !important;
+  }
+
+  .print-kpi-card::before {
+    content: '' !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    height: 3px !important;
+    background: linear-gradient(90deg, #ea580c, #c2410c) !important;
+    border-radius: 16px 16px 0 0 !important;
+  }
+
+  .print-kpi-label {
+    font-size: 11px !important;
+    font-weight: 500 !important;
+    color: #6b7280 !important;
+    margin-bottom: 10px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.08em !important;
+  }
+
+  .print-kpi-value {
+    font-size: 34px !important;
+    font-weight: 800 !important;
+    color: #111827 !important;
+    line-height: 1 !important;
+    letter-spacing: -1px !important;
+  }
+
+  .print-kpi-badge {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+    margin-top: 10px !important;
+    font-size: 10px !important;
+    font-weight: 600 !important;
+    color: #10b981 !important;
+    background: #d1fae5 !important;
+    padding: 2px 8px !important;
+    border-radius: 20px !important;
+  }
+
+  /* ── Charts area ── */
+  .print-charts-grid {
+    display: grid !important;
+    grid-template-columns: 2fr 1fr !important;
+    gap: 12px !important;
+    margin-bottom: 16px !important;
+  }
+
+  .print-chart-box {
+    background: #f9fafb !important;
+    border: 1px solid #e5e7eb !important;
+    border-radius: 12px !important;
+    padding: 16px !important;
+    page-break-inside: avoid !important;
+  }
+
+  .print-text-dark,
+  .print-text-dark * {
+    color: #111827 !important;
+  }
+
+  .print-chart-title {
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    color: #111827 !important;
+    margin-bottom: 4px !important;
+  }
+
+  .print-chart-subtitle {
+    font-size: 11px !important;
+    color: #6b7280 !important;
+    margin-bottom: 16px !important;
+  }
+
+  /* ── Footer ── */
+  .print-footer {
+    border-top: 1px solid #e5e7eb !important;
+    padding-top: 16px !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    margin-top: 32px !important;
+  }
+
+  .print-footer-left {
+    font-size: 11px !important;
+    color: #9ca3af !important;
+  }
+
+  .print-footer-brand {
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    color: #ea580c !important;
+  }
+
+  /* Preserve recharts colors when printing */
+  svg text { fill: #374151 !important; }
+  .recharts-text { fill: #374151 !important; }
+  .recharts-cartesian-grid-horizontal line,
+  .recharts-cartesian-grid-vertical line { stroke: #e5e7eb !important; }
+}

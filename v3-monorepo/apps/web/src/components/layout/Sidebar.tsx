@@ -16,6 +16,7 @@ import {
   Globe,
   Sun,
   Moon,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/ui/Logo";
@@ -26,7 +27,7 @@ const navItems = [
   { href: "/compose", icon: PenSquare, label: "Criar Post" },
   { href: "/accounts", icon: Globe, label: "Contas" },
   { href: "/calendar", icon: Calendar, label: "Calendário" },
-  { href: "/analytics", icon: BarChart2, label: "Analytics" },
+  { href: "/analytics", icon: BarChart2, label: "Performance" },
   { href: "/media", icon: Image, label: "Mídias" },
   { href: "/team", icon: Users, label: "Equipe" },
 ];
