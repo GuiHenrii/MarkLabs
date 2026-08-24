@@ -141,7 +141,7 @@ export function OrganicAnalytics() {
       {/* Screen-only content */}
 
       <main style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "24px", flex: 1 }} className="animate-fade-in print-content">
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div className="no-print" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", gap: "6px", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "10px", padding: "4px" }}>
             {periods.map((p) => (
               <button
@@ -186,7 +186,7 @@ export function OrganicAnalytics() {
         </div>
 
         {/* Screen KPI cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "14px" }}>
+        <div className="no-print" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "14px" }}>
           {[
             { title: "Alcance Total", value: formatNumber(summary.reach), icon: Eye, color: "#ea580c" },
             { title: "Total de Seguidores", value: formatNumber(summary.followers), icon: Users, color: "#9a3412" },
@@ -210,7 +210,7 @@ export function OrganicAnalytics() {
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "16px" }}>
-          <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "14px", padding: "20px" }}>
+          <div className="print-chart-box print-text-dark" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "14px", padding: "20px" }}>
             <h2 style={{ fontSize: "15px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "4px" }}>Alcance por Rede</h2>
             <p style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "20px" }}>{period}</p>
             <ResponsiveContainer width="100%" height={240}>
@@ -241,7 +241,7 @@ export function OrganicAnalytics() {
             </ResponsiveContainer>
           </div>
 
-          <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "14px", padding: "20px" }}>
+          <div className="print-chart-box print-text-dark" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "14px", padding: "20px" }}>
             <h2 style={{ fontSize: "15px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "4px" }}>Distribuição por Plataforma</h2>
             <p style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "16px" }}>% das contas conectadas</p>
             <ResponsiveContainer width="100%" height={180}>
@@ -260,7 +260,7 @@ export function OrganicAnalytics() {
           </div>
         </div>
 
-        <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "14px", padding: "20px" }}>
+        <div className="print-chart-box print-text-dark" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "14px", padding: "20px" }}>
           <h2 style={{ fontSize: "15px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "16px" }}>Top Hashtags</h2>
           {topHashtags.length === 0 ? (
             <p style={{ color: "var(--text-muted)", fontSize: "13px" }}>Ainda não há dados reais de hashtags disponíveis.</p>

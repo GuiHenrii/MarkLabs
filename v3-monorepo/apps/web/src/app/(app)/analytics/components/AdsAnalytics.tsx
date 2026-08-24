@@ -153,7 +153,7 @@ export function AdsAnalytics() {
       <main style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "20px", flex: 1 }} className="animate-fade-in print-content">
 
         {/* Header bar */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div className="no-print" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", gap: "6px", background: "var(--bg-secondary)", border: "1px solid var(--border)", borderRadius: "10px", padding: "4px" }}>
             {PERIODS.map((p) => (
               <button key={p} onClick={() => setPeriod(p)} style={{

@@ -48,7 +48,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             minHeight: "100dvh",
             background: "var(--bg-primary)",
           }}
-          className="mobile-full"
+          className="mobile-full print-layout-content"
         >
           {children}
         </div>
