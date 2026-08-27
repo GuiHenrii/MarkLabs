@@ -19,7 +19,24 @@ export async function GET(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const id = new URL(request.url).searchParams.get("id");
+  const url = new URL(request.url);
+  const teamId = url.searchParams.get("teamId");
+  const id = url.searchParams.get("id");
+
+  if (teamId) {
+    try {
+      await requireTeamAccess(teamId, "settings:manage");
+      const result = await prisma.socialAccount.updateMany({
+        where: { teamId, isActive: true },
+        data: { isActive: false },
+      });
+      return NextResponse.json({ success: true, disconnected: result.count });
+    } catch (error) {
+      const result = apiErrorResponse(error);
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+  }
+
   if (!id) return NextResponse.json({ error: "ID é obrigatório." }, { status: 400 });
   try {
     const account = await prisma.socialAccount.findUnique({ where: { id }, select: { teamId: true } });

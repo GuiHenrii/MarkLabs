@@ -36,23 +36,33 @@ type AnalyticsPayload = {
   summary: { followers: number; reach: number; engagement: number; shares: number };
   records: AnalyticsRecord[];
   connectedAccounts: AnalyticsAccount[];
+  warnings?: string[];
+  period?: string;
 };
 
-export function OrganicAnalytics() {
+export function OrganicAnalytics({ selectedAccountIds }: { selectedAccountIds: string[] }) {
   const { teamId } = useTeam();
   const [period, setPeriod] = useState("30 dias");
   const [analytics, setAnalytics] = useState<AnalyticsPayload | null>(null);
 
   useEffect(() => {
     if (!teamId) return;
+    if (selectedAccountIds.length === 0) {
+      setAnalytics(null);
+      return;
+    }
 
-    fetch(`/api/analytics?teamId=${teamId}`)
+    const params = new URLSearchParams({ teamId, period });
+    selectedAccountIds.forEach((id) => params.append("accountIds", id));
+
+    fetch(`/api/analytics?${params.toString()}`)
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error("Falha ao carregar analytics"))))
       .then(setAnalytics)
       .catch((error) => console.error("Erro ao carregar analytics:", error));
-  }, [teamId]);
+  }, [teamId, selectedAccountIds, period]);
 
   const summary = analytics?.summary ?? { followers: 0, reach: 0, engagement: 0, shares: 0 };
+  const warnings = analytics?.warnings ?? [];
 
   const reachData = useMemo(() => {
     const records = analytics?.records ?? [];
@@ -186,6 +196,26 @@ export function OrganicAnalytics() {
         </div>
 
         {/* Screen KPI cards */}
+        {selectedAccountIds.length === 0 ? (
+          <div style={{ padding: "20px", borderRadius: "14px", border: "1px dashed var(--border)", background: "var(--bg-card)", color: "var(--text-muted)", fontSize: "13px" }}>
+            Selecione uma ou mais contas para ver as métricas orgânicas.
+          </div>
+        ) : null}
+
+        {warnings.length > 0 ? (
+          <div style={{ padding: "16px 18px", borderRadius: "14px", border: "1px solid rgba(245,158,11,0.28)", background: "rgba(245,158,11,0.08)", color: "var(--text-primary)", fontSize: "13px", lineHeight: 1.45 }}>
+            <strong style={{ display: "block", marginBottom: "4px", color: "#f59e0b" }}>Aviso de coleta</strong>
+            <div style={{ display: "grid", gap: "4px" }}>
+              {warnings.slice(0, 6).map((warning) => (
+                <p key={warning} style={{ margin: 0 }}>
+                  {warning}
+                </p>
+              ))}
+            </div>
+            {warnings.length > 6 ? <p style={{ margin: "6px 0 0", color: "var(--text-muted)", fontSize: "12px" }}>+ {warnings.length - 6} outro(s) aviso(s).</p> : null}
+          </div>
+        ) : null}
+
         <div className="no-print" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "14px" }}>
           {[
             { title: "Alcance Total", value: formatNumber(summary.reach), icon: Eye, color: "#ea580c" },
@@ -276,4 +306,3 @@ export function OrganicAnalytics() {
     </>
   );
 }
-

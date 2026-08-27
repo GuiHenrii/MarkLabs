@@ -149,7 +149,7 @@ export default function MediaPage() {
 
       <main
         style={{ padding: "24px", display: "grid", gridTemplateColumns: "200px 1fr", gap: "20px", flex: 1, alignItems: "start" }}
-        className="animate-fade-in"
+        className="tech-page media-page animate-fade-in mobile-content"
       >
         {/* Left sidebar */}
         <div style={{ display: "flex", flexDirection: "column", gap: "4px", position: "sticky", top: "88px" }}>

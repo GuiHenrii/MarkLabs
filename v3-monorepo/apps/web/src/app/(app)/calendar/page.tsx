@@ -80,7 +80,7 @@ export default function CalendarPage() {
   const todayKey = formatDateKey(now.getFullYear(), now.getMonth(), now.getDate());
 
   const transformedPosts = posts.map((post: any) => {
-    const dateObj = post.scheduledAt ? new Date(post.scheduledAt) : post.publishedAt ? new Date(post.publishedAt) : new Date(post.createdAt || Date.now());
+    const dateObj = post.scheduledAt ? new Date(post.scheduledAt) : post.publishedAt ? new Date(post.publishedAt) : new Date(post.createdAt || 0);
     const dateKey = formatDateKey(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
     const timeStr = dateObj.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     return {
@@ -135,7 +135,7 @@ export default function CalendarPage() {
           alignItems: "start",
           background: "linear-gradient(180deg, rgba(234,88,12,0.04), transparent 30%)",
         }}
-        className="animate-fade-in"
+        className="tech-page calendar-page animate-fade-in mobile-content"
       >
         <div
           style={{

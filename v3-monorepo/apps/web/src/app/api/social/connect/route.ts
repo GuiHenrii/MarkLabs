@@ -23,12 +23,12 @@ export async function GET(request: Request) {
       const appId = process.env.META_APP_ID;
       const appSecret = process.env.META_APP_SECRET;
       if (!appId || !appSecret) return NextResponse.json({ error: "Integração Meta não configurada." }, { status: 503 });
-      authUrl = new FacebookProvider(appId, appSecret).getAuthUrl(redirectUri, state);
+      authUrl = new FacebookProvider(appId, appSecret, process.env.META_FACEBOOK_LOGIN_CONFIG_ID).getAuthUrl(redirectUri, state);
     } else if (platform === "INSTAGRAM") {
       const appId = process.env.META_APP_ID;
       const appSecret = process.env.META_APP_SECRET;
       if (!appId || !appSecret) return NextResponse.json({ error: "Integração Meta não configurada." }, { status: 503 });
-      authUrl = new InstagramProvider(appId, appSecret).getAuthUrl(redirectUri, state);
+      authUrl = new InstagramProvider(appId, appSecret, process.env.META_INSTAGRAM_LOGIN_CONFIG_ID).getAuthUrl(redirectUri, state);
     } else if (platform === "LINKEDIN") {
       const clientId = process.env.LINKEDIN_CLIENT_ID;
       const clientSecret = process.env.LINKEDIN_CLIENT_SECRET;

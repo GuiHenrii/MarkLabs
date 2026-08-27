@@ -37,7 +37,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <TeamProvider teamId={teamId}>
-      <div style={{ display: "flex", minHeight: "100dvh" }}>
+      <div style={{ display: "flex", minHeight: "100dvh" }} className="mobile-app-shell">
         <Sidebar />
         <div
           style={{
@@ -50,7 +50,21 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           }}
           className="mobile-full print-layout-content"
         >
-          {children}
+          <div
+            style={{
+              width: "100%",
+              maxWidth: "1600px",
+              margin: "0 auto",
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              padding: "20px 24px 24px",
+              gap: "20px",
+            }}
+            className="mobile-content"
+          >
+            {children}
+          </div>
         </div>
       </div>
     </TeamProvider>

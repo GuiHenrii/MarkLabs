@@ -1,10 +1,10 @@
 ﻿"use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type CSSProperties } from "react";
 import {
   Image as ImageIcon, Video, Smile, Hash, AtSign, MapPin,
   Clock, Send, Save, ChevronDown, X, Plus, Eye,
-  Camera, Video as VideoIcon, Briefcase, Globe, Sparkles, RectangleHorizontal, Square, Clapperboard
+  Camera, Video as VideoIcon, Briefcase, Globe, Sparkles, RectangleHorizontal, Square, Clapperboard, Check, ArrowUpRight
 } from "lucide-react";
 import Link from "next/link";
 import { Topbar } from "@/components/layout/Topbar";
@@ -47,15 +47,18 @@ type MediaItem = {
   type: "IMAGE" | "VIDEO";
   width?: number;
   height?: number;
+  duration?: number;
   order?: number;
   cropFocus?: number;
+  coverTime?: number;
+  coverUrl?: string;
 };
 type PostTypeId = (typeof postTypes)[number]["id"];
 
 type MediaCheck = { status: "compatible" | "incompatible" | "unknown"; message: string };
 type FormatCheck = { type: PostTypeId; label: string; check: MediaCheck };
 
-function getTargetAspectRatio(postType: string) {
+function getTargetAspectRatio(postType: string | null | undefined) {
   if (postType === "REEL" || postType === "STORY") return 9 / 16;
   if (postType === "CAROUSEL") return 1;
   return 4 / 5;
@@ -75,10 +78,11 @@ async function loadImageElement(file: File) {
   }
 }
 
-async function adjustImageToBestAspectRatio(file: File, postType: string, cropFocus = 0) {
+async function adjustImageToBestAspectRatio(file: File, postType: string | null | undefined, cropFocus = 0) {
   if (!file.type.startsWith("image/")) return file;
 
-  const targetRatio = getTargetAspectRatio(postType);
+  const safePostType = postType ?? "POST";
+  const targetRatio = getTargetAspectRatio(safePostType);
   let image: HTMLImageElement;
   try {
     image = await loadImageElement(file);
@@ -119,7 +123,7 @@ async function adjustImageToBestAspectRatio(file: File, postType: string, cropFo
 
   const baseName = file.name.replace(/\.[^.]+$/, "");
   const extension = file.name.includes(".") ? file.name.split(".").pop() : "jpg";
-  return new File([blob], `${baseName}-${postType.toLowerCase()}-${sourceWidth}x${sourceHeight}.${extension}`, {
+  return new File([blob], `${baseName}-${safePostType.toLowerCase()}-${sourceWidth}x${sourceHeight}.${extension}`, {
     type: file.type || "image/jpeg",
     lastModified: Date.now(),
   });
@@ -169,6 +173,64 @@ function getVideoDimensions(url: string) {
     video.onloadedmetadata = () => resolve({ width: video.videoWidth, height: video.videoHeight });
     video.onerror = () => reject(new Error("Não foi possível ler o vídeo selecionado."));
     video.src = url;
+  });
+}
+
+function getVideoMetadata(url: string) {
+  return new Promise<{ width: number; height: number; duration: number }>((resolve, reject) => {
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.onloadedmetadata = () => {
+      resolve({
+        width: video.videoWidth,
+        height: video.videoHeight,
+        duration: Number.isFinite(video.duration) ? video.duration : 0,
+      });
+    };
+    video.onerror = () => reject(new Error("Não foi possível ler o vídeo selecionado."));
+    video.src = url;
+  });
+}
+
+function captureVideoFrame(url: string, time = 0.1) {
+  return new Promise<string>((resolve, reject) => {
+    const video = document.createElement("video");
+    video.preload = "auto";
+    video.muted = true;
+    video.playsInline = true;
+    video.crossOrigin = "anonymous";
+    video.src = url;
+
+    const cleanup = () => {
+      video.onseeked = null;
+      video.removeAttribute("src");
+      video.load();
+    };
+
+    video.onloadedmetadata = () => {
+      const seekTo = Math.min(Math.max(time, 0), Math.max(video.duration - 0.1, 0));
+      video.onseeked = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          const context = canvas.getContext("2d");
+          if (!context) throw new Error("Não foi possível gerar a capa do vídeo.");
+          context.drawImage(video, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/jpeg", 0.9));
+        } catch (error) {
+          reject(error);
+        } finally {
+          cleanup();
+        }
+      };
+      video.currentTime = seekTo;
+    };
+
+    video.onerror = () => {
+      cleanup();
+      reject(new Error("Não foi possível capturar a capa do vídeo."));
+    };
   });
 }
 
@@ -424,6 +486,7 @@ export default function ComposePage() {
   const [activeToolbarMenu, setActiveToolbarMenu] = useState<string | null>(null);
   const [storyCropFocus, setStoryCropFocus] = useState(0);
   const [mediaCheck, setMediaCheck] = useState<MediaCheck>({ status: "unknown", message: "Adicione mídia para validar o formato." });
+  const [videoCoverMessages, setVideoCoverMessages] = useState<Record<number, string | null>>({});
   const activePostType = postTypesSelected[0] ?? null;
   const selectedFormats: PostTypeId[] = postTypesSelected;
   const formatStatuses = getFormatsStatus(selectedFormats, media);
@@ -435,6 +498,10 @@ export default function ComposePage() {
     hashtag: ["#marketing", "#socialmedia", "#vendas", "#business", "#empreendedorismo"],
     mention: ["@joaodasilva", "@empresa_ltda", "@parceiro_oficial", "@influencer_br"],
     location: ["São Paulo, SP", "Rio de Janeiro, RJ", "Belo Horizonte, MG", "Curitiba, PR"]
+  };
+
+  const updateMediaItem = (index: number, updater: (item: MediaItem) => MediaItem) => {
+    setMedia((prev) => prev.map((item, itemIndex) => (itemIndex === index ? updater(item) : item)));
   };
 
   // Fetch connected accounts from API
@@ -631,106 +698,132 @@ export default function ComposePage() {
           gap: "20px",
           flex: 1,
           alignItems: "start",
-          background: "linear-gradient(180deg, rgba(234,88,12,0.04), transparent 25%)",
         }}
-        className="animate-fade-in"
+        className="tech-page compose-page animate-fade-in mobile-content"
       >
         {/* Left: Composer */}
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          {/* Account Selection */}
-          <div
+          <section
+            className="light-hero"
             style={{
-              background: "linear-gradient(180deg, rgba(255,255,255,0.02), transparent 100%), var(--bg-card)",
-              border: "1px solid var(--border)",
-              borderRadius: "18px",
-              padding: "20px",
-              boxShadow: "0 18px 40px rgba(0,0,0,0.14)",
+              borderRadius: "26px",
+              padding: "24px 26px",
+              overflow: "hidden",
             }}
           >
-            <h2 style={{ fontSize: "14px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "14px" }}>
-              Publicar em
-            </h2>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-              {connectedAccounts.map((account) => {
-                const isSelected = selectedAccounts.includes(account.id);
-                const color = platformColors[account.platform] ?? "#ea580c";
-                const Icon = platformIcons[account.platform];
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "18px", alignItems: "flex-end", flexWrap: "wrap" }}>
+              <div style={{ maxWidth: "760px" }}>
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "8px 14px",
+                    borderRadius: "999px",
+                    background: "rgba(255,255,255,0.88)",
+                    border: "1px solid var(--border)",
+                    color: "var(--text-secondary)",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    letterSpacing: "0.03em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  <Sparkles size={12} />
+                  Mark Share studio
+                </div>
+                <h2 style={{ marginTop: "14px", fontSize: "36px", lineHeight: 1.02, letterSpacing: "-0.055em", color: "var(--text-primary)" }}>
+                  Mark Share
+                </h2>
+                <p style={{ marginTop: "8px", fontSize: "18px", fontWeight: 700, color: "#ea580c" }}>
+                  Conteúdo social com acabamento de marca.
+                </p>
+                <p style={{ marginTop: "10px", fontSize: "14px", color: "var(--text-secondary)", maxWidth: "62ch" }}>
+                  Um painel editorial para criar, organizar e publicar com presença visual, fluidez e consistência.
+                </p>
+              </div>
+
+              <div style={{ display: "grid", gap: "10px", minWidth: "260px" }}>
+                <div className="light-card" style={{ padding: "14px", borderRadius: "18px" }}>
+                  <div style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.1em", color: "#c2410c", fontWeight: 800 }}>Status</div>
+                  <div style={{ marginTop: "6px", fontSize: "14px", color: "var(--text-secondary)" }}>Ambiente pronto para compor seu próximo post.</div>
+                </div>
+                <Link href="/accounts" className="compose-accounts-link">
+                    Ver contas
+                </Link>
+              </div>
+            </div>
+          </section>
+
+          {/* Account Selection */}
+          <section className="channel-selector">
+            <div className="channel-heading">
+              <div>
+                <span className="channel-eyebrow"><Globe size={12} /> DISTRIBUIÇÃO</span>
+                <h2>Onde vamos publicar?</h2>
+                <p>Escolha um ou mais perfis para receber este conteúdo.</p>
+              </div>
+              <span className="selected-counter">
+                <i />
+                {selectedAccounts.length} selecionada{selectedAccounts.length === 1 ? "" : "s"}
+              </span>
+            </div>
+            <div className="channel-groups">
+              {(["INSTAGRAM", "FACEBOOK", "LINKEDIN"] as const).map((platform) => {
+                const platformAccounts = connectedAccounts.filter((account) => account.platform === platform);
+                if (platformAccounts.length === 0) return null;
+
+                const GroupIcon = platformIcons[platform];
+                const groupColor = platformColors[platform] ?? "#ea580c";
 
                 return (
-                  <button
-                    key={account.id}
-                    id={`account-${account.id}`}
-                    onClick={() => toggleAccount(account.id)}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      padding: "8px 14px",
-                      borderRadius: "10px",
-                      border: isSelected ? `1.5px solid ${color}60` : "1.5px solid var(--border)",
-                      background: isSelected ? `${color}15` : "var(--bg-secondary)",
-                      cursor: "pointer",
-                      transition: "all 0.15s ease",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: "28px",
-                        height: "28px",
-                        borderRadius: "50%",
-                        background: isSelected ? `${color}25` : "var(--bg-card)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: "12px",
-                        overflow: "hidden",
-                        flexShrink: 0,
-                      }}
-                    >
-                      {account.avatar ? (
-                        <img src={account.avatar} alt={account.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      ) : (
-                        account.name?.charAt(0) || "👤"
-                      )}
+                  <div key={platform} className="channel-group" style={{ "--channel-color": groupColor } as CSSProperties}>
+                    <div className="channel-group-heading">
+                      <span>{GroupIcon && <GroupIcon size={15} />} {getPlatformLabel(platform)}</span>
+                      <small>{platformAccounts.length} perfil{platformAccounts.length === 1 ? "" : "is"}</small>
                     </div>
-                    <div style={{ textAlign: "left" }}>
-                      <p style={{ fontSize: "12px", fontWeight: 600, color: isSelected ? "var(--text-primary)" : "var(--text-secondary)" }}>
-                        {account.name}
-                      </p>
-                      <p style={{ fontSize: "10px", color: "var(--text-muted)" }}>
-                        {account.username}
-                      </p>
+                    <div className="channel-grid">
+                      {platformAccounts.map((account) => {
+                        const isSelected = selectedAccounts.includes(account.id);
+                        const Icon = platformIcons[account.platform];
+
+                        return (
+                          <button
+                            key={account.id}
+                            id={`account-${account.id}`}
+                            onClick={() => toggleAccount(account.id)}
+                            aria-pressed={isSelected}
+                            className={`channel-card${isSelected ? " is-selected" : ""}`}
+                            style={{ "--channel-color": groupColor } as CSSProperties}
+                          >
+                            <div className="channel-avatar">
+                              {account.avatar ? (
+                                <img src={account.avatar} alt={account.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                              ) : (
+                                account.name?.charAt(0) || "M"
+                              )}
+                            </div>
+                            <div className="channel-copy">
+                              <strong>{account.name}</strong>
+                              <span>@{account.username || "perfil"}</span>
+                            </div>
+                            {Icon && <span className="channel-platform"><Icon size={14} /></span>}
+                            <span className="channel-check"><Check size={13} strokeWidth={3} /></span>
+                          </button>
+                        );
+                      })}
                     </div>
-                    {Icon && (
-                      <Icon size={13} style={{ color: isSelected ? color : "var(--text-muted)", marginLeft: "2px" }} />
-                    )}
-                  </button>
+                  </div>
                 );
               })}
 
-              <Link
-                href="/settings"
-                id="connect-account-btn"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  padding: "8px 14px",
-                  borderRadius: "10px",
-                  border: "1.5px dashed var(--border-light)",
-                  background: "transparent",
-                  cursor: "pointer",
-                  color: "var(--text-muted)",
-                  fontSize: "12px",
-                  transition: "all 0.15s ease",
-                  textDecoration: "none"
-                }}
-              >
-                <Plus size={13} />
-                Conectar conta
+              <Link href="/accounts" id="connect-account-btn" className="connect-channel">
+                <span><Plus size={16} /></span>
+                <div><strong>Nova conexão</strong><small>Adicionar outro perfil</small></div>
+                <ArrowUpRight size={15} />
               </Link>
             </div>
-          </div>
+          </section>
 
           {/* Content Editor */}
           <div
@@ -872,11 +965,11 @@ export default function ComposePage() {
               <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                 {media.map((m, idx) => (
                   <div key={`${m.url}-${idx}`} style={{ position: "relative", width: "80px", height: "80px", borderRadius: "8px", overflow: "hidden", border: `1px solid ${mediaCheck.status === "compatible" ? "rgba(16,185,129,0.45)" : mediaCheck.status === "incompatible" ? "rgba(239,68,68,0.45)" : "var(--border)"}` }}>
-                      {m.type === "VIDEO" ? (
-                        <video src={m.previewUrl ?? m.url} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      ) : (
-                        <img src={m.previewUrl ?? m.url} alt="upload" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      )}
+                    {m.type === "VIDEO" ? (
+                      <video src={m.previewUrl ?? m.url} poster={m.coverUrl} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    ) : (
+                      <img src={m.previewUrl ?? m.url} alt="upload" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    )}
                     <div style={{ position: "absolute", inset: "auto 4px 4px 4px", display: "flex", justifyContent: "space-between", gap: "4px" }}>
                       <button
                         onClick={() => setMedia((prev) => moveMediaItem(prev, idx, idx - 1))}
@@ -928,6 +1021,41 @@ export default function ComposePage() {
                         </button>
                       </div>
                     )}
+                    {m.type === "VIDEO" && (
+                      <div style={{ position: "absolute", left: "4px", right: "4px", bottom: "4px", display: "grid", gap: "4px", padding: "4px 5px", borderRadius: "8px", background: "rgba(0,0,0,0.74)" }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "6px" }}>
+                          <span style={{ fontSize: "10px", color: "#fff", fontWeight: 700 }}>Capa</span>
+                          <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.7)" }}>
+                            {m.coverTime !== undefined ? `${Math.round(m.coverTime)}s` : "auto"}
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={Math.max(1, Math.floor(m.duration ?? 5))}
+                          step={0.1}
+                          value={m.coverTime ?? 0}
+                          onChange={async (e) => {
+                            const nextTime = Number(e.target.value);
+                            setVideoCoverMessages((prev) => ({ ...prev, [idx]: "Atualizando capa..." }));
+                            try {
+                              const nextCoverUrl = await captureVideoFrame(m.previewUrl ?? m.url, nextTime);
+                              updateMediaItem(idx, (item) => ({ ...item, coverTime: nextTime, coverUrl: nextCoverUrl }));
+                              setVideoCoverMessages((prev) => ({ ...prev, [idx]: null }));
+                            } catch {
+                              setVideoCoverMessages((prev) => ({ ...prev, [idx]: "Não foi possível gerar a capa." }));
+                            }
+                          }}
+                          style={{ width: "100%", accentColor: "#38bdf8" }}
+                          title="Selecionar capa do vídeo"
+                        />
+                        {videoCoverMessages[idx] && (
+                          <span style={{ fontSize: "9px", color: "#fff", lineHeight: 1.2 }}>
+                            {videoCoverMessages[idx]}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -970,6 +1098,21 @@ export default function ComposePage() {
                           }
 
                           const mediaItem = await res.json();
+                          let coverUrl: string | undefined;
+                          let duration: number | undefined;
+                          if (mediaItem.type === "VIDEO") {
+                            try {
+                              const metadata = await getVideoMetadata(previewUrl);
+                              duration = metadata.duration;
+                              coverUrl = await captureVideoFrame(
+                                previewUrl,
+                                Math.min(0.5, Math.max(metadata.duration * 0.15, 0.1)),
+                              );
+                            } catch {
+                              coverUrl = undefined;
+                              duration = undefined;
+                            }
+                          }
                           setMedia((prev) => [
                             ...prev,
                             {
@@ -979,6 +1122,9 @@ export default function ComposePage() {
                               type: mediaItem.type,
                               width: mediaItem.width ?? undefined,
                               height: mediaItem.height ?? undefined,
+                              duration,
+                              coverUrl,
+                              coverTime: coverUrl ? 0.5 : undefined,
                               order: prev.length,
                             },
                           ]);
@@ -1423,6 +1569,13 @@ export default function ComposePage() {
           </div>
         </div>
       </main>
+      <style>{`
+        .compose-accounts-link{height:44px;padding:0 14px;display:inline-flex;align-items:center;justify-content:center;color:#eee;border:1px solid rgba(255,255,255,.13);border-radius:13px;background:rgba(255,255,255,.055);font-size:12px;font-weight:800;text-decoration:none;transition:.2s}.compose-accounts-link:hover{transform:translateY(-2px);border-color:rgba(244,84,11,.4)}
+        .channel-selector{padding:20px;border:1px solid var(--border);border-radius:22px;background:var(--bg-card);box-shadow:0 16px 42px rgba(0,0,0,.1)}.channel-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:17px}.channel-eyebrow{display:flex;align-items:center;gap:7px;color:#f4540b;font-size:9px;font-weight:850;letter-spacing:.14em}.channel-heading h2{margin-top:5px;color:var(--text-primary);font-size:18px;letter-spacing:-.025em}.channel-heading p{margin-top:3px;color:var(--text-muted);font-size:11px}.selected-counter{display:flex;align-items:center;gap:7px;padding:7px 10px;white-space:nowrap;color:var(--text-muted);border:1px solid var(--border);border-radius:999px;background:var(--bg-secondary);font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.08em}.selected-counter i{width:6px;height:6px;border-radius:50%;background:#f4540b;box-shadow:0 0 10px rgba(244,84,11,.8)}
+        .channel-groups{display:grid;gap:18px}.channel-group{display:grid;gap:9px}.channel-group+.channel-group{padding-top:17px;border-top:1px solid var(--border)}.channel-group-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.channel-group-heading>span{display:flex;align-items:center;gap:7px;color:var(--channel-color);font-size:12px;font-weight:850;letter-spacing:.01em}.channel-group-heading small{padding:4px 8px;color:var(--text-muted);border:1px solid var(--border);border-radius:999px;background:var(--bg-secondary);font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.06em}.channel-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.channel-card{--channel-color:#f4540b;position:relative;min-width:0;height:68px;padding:10px 40px 10px 10px;display:flex;align-items:center;gap:10px;overflow:hidden;text-align:left;color:var(--text-primary);border:1px solid var(--border);border-radius:14px;background:var(--bg-secondary);cursor:pointer;transition:transform .18s ease,border-color .18s ease,background .18s ease,box-shadow .18s ease}.channel-card:before{content:"";position:absolute;left:0;top:15px;bottom:15px;width:2px;border-radius:2px;background:var(--channel-color);opacity:.45}.channel-card:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--channel-color) 42%,var(--border));box-shadow:0 10px 25px rgba(0,0,0,.1)}.channel-card.is-selected{border-color:color-mix(in srgb,var(--channel-color) 58%,var(--border));background:color-mix(in srgb,var(--channel-color) 9%,var(--bg-secondary));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--channel-color) 18%,transparent)}.channel-card.is-selected:before{opacity:1;box-shadow:0 0 12px var(--channel-color)}.channel-avatar{width:38px;height:38px;display:grid;place-items:center;flex:0 0 auto;overflow:hidden;color:var(--channel-color);border:1px solid color-mix(in srgb,var(--channel-color) 24%,var(--border));border-radius:12px;background:color-mix(in srgb,var(--channel-color) 8%,var(--bg-card));font-size:12px;font-weight:900}.channel-copy{min-width:0;display:grid;gap:2px}.channel-copy strong,.channel-copy span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.channel-copy strong{font-size:11px;line-height:1.3}.channel-copy span{color:var(--text-muted);font-size:9px}.channel-platform{position:absolute;right:11px;top:10px;color:var(--channel-color);opacity:.75}.channel-check{position:absolute;right:10px;bottom:9px;width:18px;height:18px;display:grid;place-items:center;color:#fff;border-radius:50%;background:var(--channel-color);opacity:0;transform:scale(.7);transition:.18s}.channel-card.is-selected .channel-check{opacity:1;transform:scale(1)}
+        .connect-channel{min-height:68px;padding:10px;display:flex;align-items:center;gap:10px;color:var(--text-muted);border:1px dashed var(--border-light);border-radius:14px;text-decoration:none;transition:.18s}.connect-channel:hover{color:#f4540b;border-color:rgba(244,84,11,.5);background:rgba(244,84,11,.04);transform:translateY(-2px)}.connect-channel>span{width:36px;height:36px;display:grid;place-items:center;flex:0 0 auto;border:1px solid var(--border);border-radius:11px;background:var(--bg-secondary)}.connect-channel>div{min-width:0;display:grid}.connect-channel strong{font-size:11px;color:var(--text-primary)}.connect-channel small{font-size:9px}.connect-channel>svg{margin-left:auto;flex:0 0 auto}
+        html.light .channel-selector{box-shadow:0 16px 42px rgba(55,34,20,.06)}html.light .channel-card{background:#fffdfb}@media(max-width:1250px){.channel-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:720px){.channel-heading{align-items:flex-start;flex-direction:column}.channel-grid{grid-template-columns:1fr}}
+      `}</style>
     </>
   );
 }

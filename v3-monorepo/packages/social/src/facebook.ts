@@ -1,148 +1,166 @@
 import { Platform } from "@marklabs/database";
 import { AnalyticsSnapshot, PublishInput, PublishResult, SocialProvider } from "./index";
 
-const GRAPH_API = "https://graph.facebook.com/v20.0";
+const GRAPH_API = "https://graph.facebook.com/v25.0";
+
+type GraphError = { error?: { code?: number; message?: string } };
+type InsightValue = number | Record<string, number> | undefined;
 
 export class FacebookProvider implements SocialProvider {
   platform = Platform.FACEBOOK;
-  constructor(private readonly clientId: string, private readonly clientSecret: string) {}
 
-  private isPermissionError(errorData: unknown) {
-    const error = errorData as { error?: { code?: number; message?: string } } | undefined;
-    return error?.error?.code === 100 && !!error.error.message?.includes("pages_read_engagement");
+  constructor(
+    private readonly clientId: string,
+    private readonly clientSecret: string,
+    private readonly loginConfigId?: string
+  ) {}
+
+  private getErrorDetails(errorData: unknown) {
+    const error = errorData as GraphError | undefined;
+    return {
+      code: error?.error?.code,
+      message: error?.error?.message,
+    };
   }
 
-  private async canReadPageInsights(accessToken: string) {
-    const permissionsResponse = await fetch(
-      `${GRAPH_API}/me/permissions?${new URLSearchParams({ access_token: accessToken })}`
-    );
-
-    if (!permissionsResponse.ok) return false;
-
-    const permissionsData = (await permissionsResponse.json()) as {
-      data?: Array<{ permission?: string; status?: string }>;
+  private async readJsonWithRetry<T>(url: string, retryMessage: string): Promise<{ response: Response; data: T & GraphError }> {
+    const fetchOnce = async () => {
+      const response = await fetch(url);
+      const data = (await response.json().catch(() => ({}))) as T & GraphError;
+      return { response, data };
     };
 
-    return (
-      permissionsData.data?.some(
-        (permission) => permission.permission === "pages_read_engagement" && permission.status === "granted"
-      ) ?? false
-    );
+    const first = await fetchOnce();
+    if (first.response.ok) return first;
+
+    if (first.data?.error?.code === 4) {
+      throw new Error(`META_RATE_LIMIT:${first.data?.error?.message || retryMessage}`);
+    }
+
+    throw new Error(first.data?.error?.message || retryMessage);
   }
 
   private async getPageAccessToken(platformId: string, accessToken: string) {
-    // If we already have a page token, Meta will usually return the page node directly.
-    const directPageResponse = await fetch(
+    const directResponse = await fetch(
       `${GRAPH_API}/${platformId}?${new URLSearchParams({
-        fields: "access_token",
+        fields: "id",
         access_token: accessToken,
       })}`
     );
 
-    if (directPageResponse.ok) {
-      const directPageData = (await directPageResponse.json()) as { access_token?: string };
-      if (directPageData.access_token) return directPageData.access_token;
+    if (directResponse.ok) {
+      const directPage = (await directResponse.json()) as { id?: string };
+      if (directPage.id === platformId) return accessToken;
     }
 
-    // Fallback: resolve the page token from the user's connected pages list.
     const pagesResponse = await fetch(
       `${GRAPH_API}/me/accounts?${new URLSearchParams({
         fields: "id,access_token",
+        limit: "100",
         access_token: accessToken,
       })}`
     );
 
-    if (!pagesResponse.ok) return accessToken;
+    if (!pagesResponse.ok) return null;
 
     const pagesData = (await pagesResponse.json()) as { data?: Array<{ id: string; access_token?: string }> };
-    return pagesData.data?.find((page) => page.id === platformId)?.access_token ?? accessToken;
+    return pagesData.data?.find((page) => page.id === platformId)?.access_token ?? null;
+  }
+
+  private sumInsightValues(values?: Array<{ value?: InsightValue }>) {
+    return (values ?? []).reduce((sum, entry) => {
+      if (typeof entry.value === "number") return sum + entry.value;
+      if (entry.value && typeof entry.value === "object") {
+        return sum + Object.values(entry.value).reduce((nestedSum, value) => nestedSum + (Number(value) || 0), 0);
+      }
+      return sum;
+    }, 0);
+  }
+
+  private async getInsightMetric(platformId: string, pageAccessToken: string, metric: string, periodParams: Record<string, string>) {
+    const response = await fetch(
+      `${GRAPH_API}/${platformId}/insights?${new URLSearchParams({
+        metric,
+        period: "day",
+        ...periodParams,
+        access_token: pageAccessToken,
+      })}`
+    );
+    const data = (await response.json().catch(() => ({}))) as GraphError & {
+      data?: Array<{ name: string; values?: Array<{ value?: InsightValue }> }>;
+    };
+
+    if (!response.ok) {
+      return { ok: false as const, metric, value: 0, message: this.getErrorDetails(data).message };
+    }
+
+    return { ok: true as const, metric, value: this.sumInsightValues(data.data?.[0]?.values) };
   }
 
   getAuthUrl(redirectUri: string, state: string) {
-    return `https://www.facebook.com/v20.0/dialog/oauth?${new URLSearchParams({ 
-      client_id: this.clientId, 
-      redirect_uri: redirectUri, 
-      state, 
-      scope: "pages_show_list,pages_read_engagement,pages_manage_metadata,pages_manage_posts,business_management,ads_read,ads_management",
-      response_type: "code",
-      auth_type: "rerequest",
-      return_scopes: "true",
-    })}`;
+    const params = new URLSearchParams({
+      client_id: this.clientId,
+      redirect_uri: redirectUri,
+      state,
+    });
+
+    if (this.loginConfigId) {
+      params.set("config_id", this.loginConfigId);
+      params.set("response_type", "code");
+      params.set("override_default_response_type", "true");
+    } else {
+      params.set("scope", "pages_show_list,pages_read_engagement,pages_manage_metadata,pages_manage_posts,pages_read_user_content,read_insights");
+      params.set("response_type", "code");
+      params.set("return_scopes", "true");
+    }
+
+    return `https://www.facebook.com/v25.0/dialog/oauth?${params}`;
   }
 
   async exchangeCode(code: string, redirectUri: string) {
-    const tokenResponse = await fetch(`${GRAPH_API}/oauth/access_token?${new URLSearchParams({ client_id: this.clientId, client_secret: this.clientSecret, redirect_uri: redirectUri, code })}`);
+    const tokenResponse = await fetch(
+      `${GRAPH_API}/oauth/access_token?${new URLSearchParams({
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
+        redirect_uri: redirectUri,
+        code,
+      })}`
+    );
     if (!tokenResponse.ok) throw new Error("Não foi possível trocar o código OAuth do Facebook.");
-    const token = await tokenResponse.json() as { access_token: string; expires_in?: number };
+    const token = (await tokenResponse.json()) as { access_token: string; expires_in?: number };
 
-    // DEBUG: Verificar as permissões reais do Token concedido
-    try {
-      const permsResponse = await fetch(`${GRAPH_API}/me/permissions?access_token=${token.access_token}`);
-      const permsText = await permsResponse.text();
-      console.log("[FACEBOOK DEBUG] Permissões concedidas pelo Token:", permsText);
+    const allPages: Array<{ id: string; name: string; access_token: string; picture?: { data?: { url?: string } } }> = [];
 
-      const meResponse = await fetch(`${GRAPH_API}/me?fields=id,name,email&access_token=${token.access_token}`);
-      console.log("[FACEBOOK DEBUG] Dados do Usuário (/me):", await meResponse.text());
-    } catch (e) {
-      console.error("[FACEBOOK DEBUG] Erro ao buscar dados de depuração:", e);
+    const pagesUrl = `${GRAPH_API}/me/accounts?${new URLSearchParams({
+      fields: "id,name,access_token,picture",
+      limit: "100",
+      access_token: token.access_token,
+    })}`;
+    const pagesResult = await this.readJsonWithRetry<{ data?: Array<{ id: string; name: string; access_token: string; picture?: { data?: { url?: string } } }> }>(
+      pagesUrl,
+      "Não foi possível listar as páginas vinculadas ao Facebook."
+    );
+    if (pagesResult.data.data) {
+      allPages.push(...pagesResult.data.data);
     }
 
-    // Try personal pages first
-    const pagesResponse = await fetch(`${GRAPH_API}/me/accounts?${new URLSearchParams({ fields: "id,name,access_token,picture", access_token: token.access_token })}`);
-    const pagesText = await pagesResponse.text();
-    console.log("[FACEBOOK DEBUG] /me/accounts status:", pagesResponse.status, "body:", pagesText);
-    const pages = JSON.parse(pagesText) as { data?: Array<{ id: string; name: string; access_token: string; picture?: { data?: { url?: string } } }> };
-    let page = pages.data?.[0];
+    const uniquePages = Array.from(new Map(allPages.map((p) => [p.id, p])).values());
 
-    // If no personal pages, try Business Manager pages
-    if (!page) {
-      console.log("[FACEBOOK DEBUG] No personal pages found, trying Business API...");
-      const bizResponse = await fetch(`${GRAPH_API}/me/businesses?${new URLSearchParams({ access_token: token.access_token })}`);
-      const bizText = await bizResponse.text();
-      console.log("[FACEBOOK DEBUG] businesses raw response:", bizText);
-      const bizData = JSON.parse(bizText) as { data?: Array<{ id: string; name: string }> };
-      const business = bizData.data?.[0];
-      
-      if (business) {
-        // Try owned_pages first, then client_pages (for agency accounts)
-        for (const edge of ["owned_pages", "client_pages"]) {
-          console.log(`[FACEBOOK DEBUG] Trying edge: ${edge} for business: ${business.id}`);
-          const bizPagesResponse = await fetch(`${GRAPH_API}/${business.id}/${edge}?${new URLSearchParams({ fields: "id,name,access_token,picture", access_token: token.access_token })}`);
-          const bizPagesText = await bizPagesResponse.text();
-          console.log(`[FACEBOOK DEBUG] Response for ${edge}:`, bizPagesText);
-          const bizPagesData = JSON.parse(bizPagesText) as { data?: Array<{ id: string; name: string; access_token: string; picture?: { data?: { url?: string } } }> };
-          if (bizPagesData.data && bizPagesData.data.length > 0) {
-            const bizPage = bizPagesData.data[0];
-            if (bizPage) {
-              page = {
-                id: bizPage.id,
-                name: bizPage.name,
-                access_token: bizPage.access_token || token.access_token,
-                picture: bizPage.picture
-              };
-              break;
-            }
-          }
-        }
-      } else {
-        console.log("[FACEBOOK DEBUG] No businesses found for this user.");
-      }
+    if (uniquePages.length === 0) {
+      throw new Error(
+        "Nenhuma Página do Facebook foi encontrada para esta conta. Verifique se o usuário tem acesso à Página e se o app recebeu pages_show_list e pages_read_engagement."
+      );
     }
 
-    if (!page) {
-      console.log("[FACEBOOK DEBUG] Nenhuma página encontrada. Usando perfil pessoal como fallback.");
-      const meResponse = await fetch(`${GRAPH_API}/me?${new URLSearchParams({ fields: "id,name,picture", access_token: token.access_token })}`);
-      const meData = await meResponse.json() as { id: string; name: string; picture?: { data?: { url?: string } } };
-      return { 
-        accessToken: token.access_token, 
-        platformId: meData.id, 
-        name: meData.name, 
-        username: undefined, 
-        avatar: meData.picture?.data?.url, 
-        tokenExpiry: token.expires_in ? new Date(Date.now() + token.expires_in * 1000) : undefined 
-      };
-    }
-    return { accessToken: page.access_token, platformId: page.id, name: page.name, username: undefined, avatar: page.picture?.data?.url, tokenExpiry: token.expires_in ? new Date(Date.now() + token.expires_in * 1000) : undefined };
+    return uniquePages.map((page) => ({
+      accessToken: page.access_token || token.access_token,
+      refreshToken: token.access_token,
+      platformId: page.id,
+      name: page.name,
+      username: undefined,
+      avatar: page.picture?.data?.url,
+      tokenExpiry: token.expires_in ? new Date(Date.now() + token.expires_in * 1000) : undefined,
+    }));
   }
 
   async publish(accessToken: string, platformId: string, input: PublishInput): Promise<PublishResult> {
@@ -152,59 +170,102 @@ export class FacebookProvider implements SocialProvider {
       body: new URLSearchParams({ message: input.content, access_token: accessToken }),
     });
     if (!response.ok) return { success: false, error: "O Facebook recusou a publicação." };
-    const data = await response.json() as { id?: string };
+    const data = (await response.json()) as { id?: string };
     return data.id ? { success: true, providerPostId: data.id } : { success: false, error: "Resposta inválida do Facebook." };
   }
 
-  async getAnalytics(accessToken: string, platformId: string): Promise<AnalyticsSnapshot> {
+  async getAnalytics(accessToken: string, platformId: string, since?: Date): Promise<AnalyticsSnapshot> {
+    const warnings: string[] = [];
     const pageAccessToken = await this.getPageAccessToken(platformId, accessToken);
 
-    const canReadInsights = await this.canReadPageInsights(accessToken);
-    if (!canReadInsights) {
-      console.warn(
-        `[FACEBOOK ANALYTICS] Missing pages_read_engagement for platformId=${platformId}. Returning empty snapshot.`
-      );
-      return { followers: 0, impressions: 0, reach: 0, engagement: 0, likes: 0, comments: 0, shares: 0 };
+    if (!pageAccessToken) {
+      return {
+        followers: 0,
+        impressions: 0,
+        reach: 0,
+        engagement: 0,
+        likes: 0,
+        comments: 0,
+        shares: 0,
+        warnings: [
+          "Não foi possível obter um Page Access Token para esta conta do Facebook. Reconecte a página com permissão pages_read_engagement.",
+        ],
+      };
     }
-    
-    const [insightsResponse, postsResponse] = await Promise.all([
+
+    const periodParams = {
+      since: Math.floor((since ?? new Date(Date.now() - 30 * 86_400_000)).getTime() / 1000).toString(),
+      until: Math.floor(Date.now() / 1000).toString(),
+    };
+
+    const [pageResponse, postsResponse, ...insightResults] = await Promise.all([
       fetch(
-        `${GRAPH_API}/${platformId}/insights?${new URLSearchParams({
-          metric: "page_fans,page_impressions,page_post_engagements,page_impressions_unique",
+        `${GRAPH_API}/${platformId}?${new URLSearchParams({
+          fields: "followers_count",
           access_token: pageAccessToken,
         })}`
       ),
       fetch(
         `${GRAPH_API}/${platformId}/posts?${new URLSearchParams({
-          fields: "insights.metric(post_impressions,post_impressions_unique,post_engaged_users)",
+          fields: "shares,comments.limit(0).summary(true),reactions.limit(0).summary(true)",
+          limit: "100",
+          ...periodParams,
           access_token: pageAccessToken,
-          limit: "10",
         })}`
       ),
+      this.getInsightMetric(platformId, pageAccessToken, "page_media_view", periodParams),
+      this.getInsightMetric(platformId, pageAccessToken, "page_total_media_view_unique", periodParams),
+      this.getInsightMetric(platformId, pageAccessToken, "page_views_total", periodParams),
+      this.getInsightMetric(platformId, pageAccessToken, "page_post_engagements", periodParams),
+      this.getInsightMetric(platformId, pageAccessToken, "page_follows", periodParams),
+      this.getInsightMetric(platformId, pageAccessToken, "page_daily_follows", periodParams),
     ]);
 
-    if (!insightsResponse.ok) {
-      const errorData = await insightsResponse.json().catch(() => ({}));
-      if (!this.isPermissionError(errorData)) {
-        console.error("[FACEBOOK ANALYTICS ERROR]", errorData);
-      }
-      return { followers: 0, impressions: 0, reach: 0, engagement: 0, likes: 0, comments: 0, shares: 0 };
+    if (!pageResponse.ok) {
+      const errorData = await pageResponse.json().catch(() => ({}));
+      console.error("[FACEBOOK PAGE ERROR]", errorData);
+      warnings.push("Facebook não retornou followers_count da página.");
     }
 
-    const insightsData = (await insightsResponse.json()) as { data?: Array<{ name: string; values?: Array<{ value: number }> }> };
-    const postsData = postsResponse.ok ? (await postsResponse.json()) as { data?: Array<{ insights?: { data?: Array<{ name: string; values?: Array<{ value: number }> }> } }> } : {};
+    for (const result of insightResults) {
+      if (result.ok) continue;
+      warnings.push(`Facebook nao retornou ${result.metric}: ${result.message ?? "resposta invalida"}.`);
+    }
 
-    const byName = new Map((insightsData.data ?? []).map((item) => [item.name, item.values?.[0]?.value ?? 0]));
-    const followers = byName.get("page_fans") ?? 0;
-    const impressions = byName.get("page_impressions") ?? 0;
-    const reach = byName.get("page_impressions_unique") ?? 0;
-    const engagement = byName.get("page_post_engagements") ?? 0;
+    if (!postsResponse.ok) {
+      const errorData = await postsResponse.json().catch(() => ({}));
+      const { message } = this.getErrorDetails(errorData);
+      if (!message?.includes("pages_read_user_content")) {
+        warnings.push(`Facebook nao retornou interacoes dos posts: ${message ?? "resposta invalida"}.`);
+      }
+    }
 
-    const postMetrics = (postsData.data ?? []).flatMap((post) => post.insights?.data ?? []);
-    const likes = postMetrics.find((metric) => metric.name === "post_impressions_unique")?.values?.[0]?.value ?? 0;
-    const comments = postMetrics.find((metric) => metric.name === "post_engaged_users")?.values?.[0]?.value ?? 0;
+    const pageData = pageResponse.ok ? ((await pageResponse.json()) as { followers_count?: number }) : {};
+    const postsData = postsResponse.ok
+      ? ((await postsResponse.json()) as {
+          data?: Array<{
+            shares?: { count?: number };
+            comments?: { summary?: { total_count?: number } };
+            reactions?: { summary?: { total_count?: number } };
+          }>;
+        })
+      : {};
+    const byName = new Map(insightResults.filter((result) => result.ok).map((result) => [result.metric, result.value]));
+    const followers = pageData.followers_count ?? 0;
+    const impressions = Math.max(byName.get("page_media_view") ?? 0, byName.get("page_views_total") ?? 0);
+    const postTotals = (postsData.data ?? []).reduce(
+      (total, post) => ({
+        likes: total.likes + (post.reactions?.summary?.total_count ?? 0),
+        comments: total.comments + (post.comments?.summary?.total_count ?? 0),
+        shares: total.shares + (post.shares?.count ?? 0),
+      }),
+      { likes: 0, comments: 0, shares: 0 }
+    );
+    const interactionTotal = postTotals.likes + postTotals.comments + postTotals.shares;
+    const engagement = Math.max(byName.get("page_post_engagements") ?? 0, interactionTotal);
+    const reach = Math.max(byName.get("page_total_media_view_unique") ?? 0, impressions);
 
-    return { followers, impressions, reach, engagement, likes, comments, shares: 0 };
+    return { followers, impressions, reach, engagement, likes: postTotals.likes, comments: postTotals.comments, shares: postTotals.shares, warnings };
   }
 
   async verifyHealth(accessToken: string) {

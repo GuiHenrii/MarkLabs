@@ -4,9 +4,10 @@ const nextConfig: NextConfig = {
   // @ts-ignore - Permite que o Next.js aceite requisições de desenvolvimento do Ngrok
   allowedDevOrigins: ["shrine-dropbox-fidgety.ngrok-free.dev"],
   experimental: {
-    proxyClientMaxBodySize: "60mb",
+    proxyClientMaxBodySize: "500mb",
     serverActions: {
       allowedOrigins: ["shrine-dropbox-fidgety.ngrok-free.dev", "localhost:3000"],
+      bodySizeLimit: "500mb",
     },
   },
   async headers() {

@@ -39,14 +39,14 @@ export class LinkedInProvider implements SocialProvider {
     if (!profileResponse.ok) throw new Error("Não foi possível obter dados do LinkedIn.");
     const profile = await profileResponse.json() as { id: string; localizedFirstName: string; localizedLastName: string };
 
-    return {
+    return [{
       accessToken: token.access_token,
       platformId: profile.id,
       name: `${profile.localizedFirstName} ${profile.localizedLastName}`,
       username: undefined,
       avatar: undefined,
       tokenExpiry: new Date(Date.now() + token.expires_in * 1000),
-    };
+    }];
   }
 
   async publish(accessToken: string, platformId: string, input: PublishInput): Promise<PublishResult> {

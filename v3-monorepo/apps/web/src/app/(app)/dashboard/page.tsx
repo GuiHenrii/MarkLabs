@@ -1,578 +1,120 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import {
-  LineChart, Line, AreaChart, Area, BarChart, Bar,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
-} from "recharts";
-import {
-  TrendingUp, TrendingDown, Users, Heart, Eye, Share2,
-  ArrowRight, MoreHorizontal, Calendar, CheckCircle2,
-  Clock, XCircle,
-} from "lucide-react";
-import { Topbar } from "@/components/layout/Topbar";
-import { formatNumber, getPlatformLabel } from "@/lib/utils";
-import { useTeam } from "@/components/providers/TeamProvider";
 import Link from "next/link";
+import { useEffect, useState, type ElementType } from "react";
+import { ArrowUpRight, CalendarDays, CircleCheck, Clock3, Globe2, Layers3, Orbit, PenTool, Radio, Sparkles, Zap } from "lucide-react";
+import { Topbar } from "@/components/layout/Topbar";
+import { useTeam } from "@/components/providers/TeamProvider";
 
-const platformColors: Record<string, string> = {
-  instagram: "#e1306c",
-  facebook: "#1877f2",
-  linkedin: "#0a66c2",
-};
+type Metrics = { connectedAccounts?: number; publishedPosts?: number; scheduledPosts?: number; byPlatform?: Record<string, number> };
+type Action = { href: string; label: string; title: string; text: string; icon: ElementType };
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+const actions: Action[] = [
+  { href: "/compose", label: "Produzir", title: "Criar publicação", text: "Transforme uma ideia em conteúdo pronto para as redes.", icon: PenTool },
+  { href: "/accounts", label: "Organizar", title: "Gerenciar contas", text: "Controle todas as conexões em um só lugar.", icon: Globe2 },
+  { href: "/calendar", label: "Planejar", title: "Abrir calendário", text: "Organize a cadência e as próximas entregas.", icon: CalendarDays },
+];
 
-function MetricCard({
-  title,
-  value,
-  change,
-  changeType,
-  icon: Icon,
-  color,
-}: {
-  title: string;
-  value: string;
-  change: string;
-  changeType: "up" | "down";
-  icon: React.ElementType;
-  color: string;
-}) {
+function Metric({ label, value, detail, icon: Icon }: { label: string; value: string; detail: string; icon: ElementType }) {
   return (
-    <div
-      style={{
-        background: "var(--bg-card)",
-        border: "1px solid var(--border)",
-        borderRadius: "14px",
-        padding: "20px",
-        display: "flex",
-        flexDirection: "column",
-        gap: "12px",
-        transition: "border-color 0.2s ease, transform 0.2s ease",
-        cursor: "default",
-      }}
-      className="metric-card"
-    >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <p style={{ fontSize: "13px", color: "var(--text-muted)", fontWeight: 500 }}>{title}</p>
-        <div
-          style={{
-            width: "36px",
-            height: "36px",
-            borderRadius: "10px",
-            background: `${color}18`,
-            border: `1px solid ${color}30`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Icon size={16} style={{ color }} />
-        </div>
-      </div>
-      <div>
-        <p style={{ fontSize: "28px", fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.1 }}>
-          {value}
-        </p>
-        <div style={{ display: "flex", alignItems: "center", gap: "4px", marginTop: "6px" }}>
-          {changeType === "up" ? (
-            <TrendingUp size={13} style={{ color: "#10b981" }} />
-          ) : (
-            <TrendingDown size={13} style={{ color: "#ef4444" }} />
-          )}
-          <span
-            style={{
-              fontSize: "12px",
-              color: changeType === "up" ? "#10b981" : "#ef4444",
-              fontWeight: 600,
-            }}
-          >
-            {change}
-          </span>
-          <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>vs. semana passada</span>
-        </div>
-      </div>
-    </div>
+    <article className="metric-card">
+      <div className="metric-head"><span className="metric-icon"><Icon size={17} /></span><span className="live"><i /> AO VIVO</span></div>
+      <strong>{value}</strong>
+      <div><h3>{label}</h3><p>{detail}</p></div>
+    </article>
   );
 }
-
-function PlatformBadge({ platform }: { platform: string }) {
-  const colors: Record<string, { bg: string; text: string }> = {
-    INSTAGRAM: { bg: "rgba(225,48,108,0.15)", text: "#e1306c" },
-    FACEBOOK: { bg: "rgba(24,119,242,0.15)", text: "#1877f2" },
-    LINKEDIN: { bg: "rgba(10,102,194,0.15)", text: "#0a66c2" },
-    TIKTOK: { bg: "rgba(255,255,255,0.1)", text: "#fff" },
-    YOUTUBE: { bg: "rgba(255,0,0,0.15)", text: "#ff0000" },
-  };
-  const c = colors[platform] ?? { bg: "rgba(234,88,12,0.15)", text: "#ea580c" };
-  return (
-    <span
-      style={{
-        fontSize: "10px",
-        fontWeight: 700,
-        padding: "2px 7px",
-        borderRadius: "20px",
-        background: c.bg,
-        color: c.text,
-        letterSpacing: "0.04em",
-        textTransform: "uppercase",
-      }}
-    >
-      {getPlatformLabel(platform)}
-    </span>
-  );
-}
-
-const customTooltipStyle = {
-  background: "var(--bg-card)",
-  border: "1px solid var(--border)",
-  borderRadius: "10px",
-  padding: "10px 14px",
-  fontSize: "12px",
-  color: "var(--text-primary)",
-  boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
-};
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
   const { teamId } = useTeam();
-  const [metrics, setMetrics] = useState<any>(null);
-  const [recentPosts, setRecentPosts] = useState<any[]>([]);
+  const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [loading, setLoading] = useState(true);
-  const engagementData = metrics?.engagementSeries ?? [];
-  const followersData = metrics?.followersSeries ?? [];
-  const byPlatform = metrics?.byPlatform ?? {};
 
-  // Fetch dashboard metrics and posts
   useEffect(() => {
     if (!teamId) return;
-
-    const fetchData = async () => {
+    const load = async () => {
       try {
         setLoading(true);
-        const [metricsRes, postsRes] = await Promise.all([
-          fetch(`/api/dashboard/metrics?teamId=${teamId}`),
-          fetch(`/api/posts?teamId=${teamId}`),
-        ]);
-
-        if (metricsRes.ok) {
-          const metricsData = await metricsRes.json();
-          setMetrics(metricsData);
-        }
-
-        if (postsRes.ok) {
-          const postsData = await postsRes.json();
-          // Filter for published posts only (for top posts display)
-          setRecentPosts(postsData.filter((post: any) => post.status === "PUBLISHED"));
-        }
-      } catch (err) {
-        console.error("Erro ao buscar dados do dashboard:", err);
+        const response = await fetch(`/api/dashboard/metrics?teamId=${teamId}`);
+        if (response.ok) setMetrics(await response.json());
+      } catch (error) {
+        console.error("Erro ao carregar dashboard:", error);
       } finally {
         setLoading(false);
       }
     };
-
-    fetchData();
+    void load();
   }, [teamId]);
+
+  const connected = metrics?.connectedAccounts ?? 0;
+  const published = metrics?.publishedPosts ?? 0;
+  const scheduled = metrics?.scheduledPosts ?? 0;
+  const channels = Object.keys(metrics?.byPlatform ?? {}).length;
+  const show = (value: number) => loading ? "--" : String(value);
 
   return (
     <>
-      <Topbar
-        title="Dashboard"
-        subtitle="Bem-vindo! Aqui está um resumo das suas redes sociais."
-      />
-
-      <main
-        style={{
-          padding: "24px",
-          display: "flex",
-          flexDirection: "column",
-          gap: "24px",
-          flex: 1,
-        }}
-        className="animate-fade-in"
-      >
-        {/* Metric Cards */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-            gap: "16px",
-          }}
-          className="mobile-stack"
-        >
-          <MetricCard
-            title="Contas Conectadas"
-            value={String(metrics?.connectedAccounts ?? 0)}
-            change="+0%"
-            changeType="up"
-            icon={Users}
-            color="#ea580c"
-          />
-          <MetricCard
-            title="Posts Publicados"
-            value={String(metrics?.publishedPosts ?? 0)}
-            change="+0%"
-            changeType="up"
-            icon={Eye}
-            color="#9a3412"
-          />
-          <MetricCard
-            title="Posts Agendados"
-            value={String(metrics?.scheduledPosts ?? 0)}
-            change="+0%"
-            changeType="up"
-            icon={Heart}
-            color="#ec4899"
-          />
-          <MetricCard
-            title="Posts Recentes"
-            value={String(recentPosts.length)}
-            change="+0%"
-            changeType="up"
-            icon={Share2}
-            color="#f59e0b"
-          />
-        </div>
-
-        {/* Charts Row */}
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "16px" }} className="mobile-stack">
-          {/* Engagement Chart */}
-          <div
-            style={{
-              background: "var(--bg-card)",
-              border: "1px solid var(--border)",
-              borderRadius: "14px",
-              padding: "20px",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px" }}>
-              <div>
-                <h2 style={{ fontSize: "15px", fontWeight: 700, color: "var(--text-primary)" }}>
-                  Engajamento por Rede
-                </h2>
-                <p style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "2px" }}>
-                  Últimos 7 dias
-                </p>
-              </div>
-              <div style={{ display: "flex", gap: "6px" }}>
-                {["7d", "30d", "90d"].map((p) => (
-                  <button
-                    key={p}
-                    style={{
-                      background: p === "7d" ? "rgba(234,88,12,0.2)" : "transparent",
-                      border: p === "7d" ? "1px solid rgba(234,88,12,0.4)" : "1px solid var(--border)",
-                      color: p === "7d" ? "#fb923c" : "var(--text-muted)",
-                      borderRadius: "6px",
-                      padding: "4px 10px",
-                      fontSize: "12px",
-                      fontWeight: 500,
-                      cursor: "pointer",
-                    }}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
+      <Topbar title="Dashboard" subtitle="Sua operação social, clara e pronta para avançar." />
+      <main className="dash animate-fade-in">
+        <section className="command-hero">
+          <div className="hero-grid" />
+          <div className="hero-rings"><span /><i /></div>
+          <div className="hero-copy">
+            <span className="kicker"><Sparkles size={13} /> MARK SHARE / COMMAND CENTER</span>
+            <h1>Ideias em movimento.<br /><em>Marcas em evidência.</em></h1>
+            <p>Crie, conecte e organize sua presença digital em um espaço feito para manter o trabalho fluindo.</p>
+            <div className="hero-actions">
+              <Link href="/compose" className="primary">Começar a criar <ArrowUpRight size={17} /></Link>
+              <Link href="/accounts" className="secondary">Ver minhas contas</Link>
             </div>
-            <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={engagementData}>
-                <defs>
-                  <linearGradient id="igGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#e1306c" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#e1306c" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="fbGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#1877f2" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#1877f2" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="liGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0a66c2" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#0a66c2" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="day" stroke="var(--text-muted)" fontSize={11} />
-                <YAxis stroke="var(--text-muted)" fontSize={11} tickFormatter={(v) => formatNumber(v)} />
-                <Tooltip contentStyle={customTooltipStyle} formatter={(v: any) => formatNumber(v)} />
-                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: "12px" }} />
-                {(engagementData.length ? Object.keys(engagementData[0]).filter((key) => key !== "day") : Object.keys(byPlatform)).map((key) => {
-                  const normalizedKey = key.toLowerCase();
-                  const stroke = platformColors[normalizedKey] ?? "#ea580c";
-                  const gradientId = `${normalizedKey}Grad`;
-                  return (
-                    <Area
-                      key={key}
-                      type="monotone"
-                      dataKey={key}
-                      name={key.charAt(0).toUpperCase() + key.slice(1)}
-                      stroke={stroke}
-                      fill={`url(#${gradientId})`}
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  );
-                })}
-              </AreaChart>
-            </ResponsiveContainer>
           </div>
-
-          {/* Followers Growth */}
-          <div
-            style={{
-              background: "var(--bg-card)",
-              border: "1px solid var(--border)",
-              borderRadius: "14px",
-              padding: "20px",
-            }}
-          >
-            <h2 style={{ fontSize: "15px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "4px" }}>
-              Crescimento de Seguidores
-            </h2>
-            <p style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "20px" }}>
-              Últimos 6 meses
-            </p>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={followersData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="month" stroke="var(--text-muted)" fontSize={11} />
-                <YAxis stroke="var(--text-muted)" fontSize={11} tickFormatter={(v) => formatNumber(v)} />
-                <Tooltip contentStyle={customTooltipStyle} formatter={(v: any) => [formatNumber(v), "Seguidores"]} />
-                <Bar dataKey="seguidores" fill="url(#barGrad)" radius={[6, 6, 0, 0]} />
-                <defs>
-                  <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#ea580c" />
-                    <stop offset="100%" stopColor="#c2410c" />
-                  </linearGradient>
-                </defs>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Bottom Row */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }} className="mobile-stack">
-          {/* Top Posts */}
-          <div
-            style={{
-              background: "var(--bg-card)",
-              border: "1px solid var(--border)",
-              borderRadius: "14px",
-              padding: "20px",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
-              <h2 style={{ fontSize: "15px", fontWeight: 700, color: "var(--text-primary)" }}>
-                Top Posts
-              </h2>
-              <Link
-                href="/calendar"
-                style={{
-                  background: "none",
-                  border: "none",
-                  fontSize: "12px",
-                  color: "#fb923c",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "4px",
-                  fontWeight: 500,
-                  textDecoration: "none",
-                }}
-              >
-                Ver todos <ArrowRight size={12} />
-              </Link>
+          <div className="console">
+            <div className="console-head"><span><i /> SISTEMA OPERACIONAL</span><Orbit size={18} /></div>
+            <div className="console-status"><b><CircleCheck size={20} /></b><div><small>STATUS DO WORKSPACE</small><strong>Pronto para publicar</strong></div></div>
+            <div className="console-lines">
+              <div><span>Contas sincronizadas</span><b>{show(connected)}</b></div>
+              <div><span>Canais em operação</span><b>{show(channels)}</b></div>
+              <div><span>Fila programada</span><b>{show(scheduled)}</b></div>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              {recentPosts.slice(0, 3).map((post) => (
-                <div
-                  key={post.id}
-                  style={{
-                    padding: "12px",
-                    background: "var(--bg-secondary)",
-                    borderRadius: "10px",
-                    border: "1px solid var(--border)",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
-                    <div
-                      style={{
-                        width: "38px",
-                        height: "38px",
-                        borderRadius: "8px",
-                        background: "var(--bg-active)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: "20px",
-                        flexShrink: 0,
-                      }}
-                    >
-                      📝
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
-                        <PlatformBadge platform={post.socialAccount?.platform || "INSTAGRAM"} />
-                        <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-                          {post.publishedAt ? new Date(post.publishedAt).toLocaleDateString("pt-BR") : "Sem data"}
-                        </span>
-                      </div>
-                      <p
-                        style={{
-                          fontSize: "12px",
-                          color: "var(--text-secondary)",
-                          overflow: "hidden",
-                          display: "-webkit-box",
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: "vertical",
-                          lineHeight: 1.5,
-                        }}
-                      >
-                        {post.content}
-                      </p>
-                      <div style={{ display: "flex", gap: "12px", marginTop: "8px" }}>
-                        <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-                          👁️ Por publicar
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+          </div>
+        </section>
+
+        <section className="metrics">
+          <Metric label="Contas conectadas" value={show(connected)} detail="Perfis disponíveis" icon={Globe2} />
+          <Metric label="Posts publicados" value={show(published)} detail="Conteúdos distribuídos" icon={Zap} />
+          <Metric label="Agendamentos" value={show(scheduled)} detail="Publicações na fila" icon={Clock3} />
+          <Metric label="Canais ativos" value={show(channels)} detail="Redes em operação" icon={Layers3} />
+        </section>
+
+        <section className="dash-bottom">
+          <div className="flow-panel">
+            <div className="section-title"><div><span>ACESSO RÁPIDO</span><h2>Continue de onde parou</h2></div><Radio size={18} /></div>
+            <div className="action-grid">
+              {actions.map(({ href, label, title, text: description, icon: Icon }, index) => (
+                <Link href={href} className="action-card" key={href}>
+                  <b className="index">0{index + 1}</b><span className="action-icon"><Icon size={19} /></span>
+                  <div><small>{label}</small><h3>{title}</h3><p>{description}</p></div><ArrowUpRight className="arrow" size={18} />
+                </Link>
               ))}
-              {recentPosts.length === 0 && (
-                <div style={{ textAlign: "center", padding: "20px", color: "var(--text-muted)" }}>
-                  Nenhum post publicado ainda
-                </div>
-              )}
             </div>
           </div>
-
-          {/* Scheduled Posts */}
-          <div
-            style={{
-              background: "var(--bg-card)",
-              border: "1px solid var(--border)",
-              borderRadius: "14px",
-              padding: "20px",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
-              <h2 style={{ fontSize: "15px", fontWeight: 700, color: "var(--text-primary)" }}>
-                Posts Agendados
-              </h2>
-              <span
-                style={{
-                  background: "rgba(234,88,12,0.15)",
-                  color: "#fb923c",
-                  fontSize: "11px",
-                  fontWeight: 700,
-                  padding: "3px 9px",
-                  borderRadius: "20px",
-                  border: "1px solid rgba(234,88,12,0.3)",
-                }}
-              >
-                {metrics?.scheduledPosts ?? 0} agendados
-              </span>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-              {recentPosts
-                .filter((post: any) => post.status === "SCHEDULED")
-                .slice(0, 3)
-                .map((post: any, i: number) => (
-                  <div
-                    key={i}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "12px",
-                      padding: "12px",
-                      background: "var(--bg-secondary)",
-                      borderRadius: "10px",
-                      border: "1px solid var(--border)",
-                    }}
-                  >
-                    <div style={{ textAlign: "center", minWidth: "40px" }}>
-                      <p style={{ fontSize: "13px", fontWeight: 700, color: "#fb923c" }}>
-                        {post.scheduledAt
-                          ? new Date(post.scheduledAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
-                          : "--:--"}
-                      </p>
-                      <Clock size={10} style={{ color: "var(--text-muted)" }} />
-                    </div>
-                    <div style={{ width: "1px", height: "32px", background: "var(--border)" }} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <PlatformBadge platform={post.socialAccount?.platform || "INSTAGRAM"} />
-                      <p
-                        style={{
-                          fontSize: "12px",
-                          color: "var(--text-secondary)",
-                          marginTop: "4px",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {post.content}
-                      </p>
-                    </div>
-                    <div
-                      style={{
-                        width: "28px",
-                        height: "28px",
-                        borderRadius: "50%",
-                        background: "rgba(245,158,11,0.15)",
-                        border: "1px solid rgba(245,158,11,0.3)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <Clock size={12} style={{ color: "#f59e0b" }} />
-                    </div>
-                  </div>
-                ))}
-
-              {recentPosts.filter((post: any) => post.status === "SCHEDULED").length === 0 && (
-                <div style={{ textAlign: "center", padding: "20px", color: "var(--text-muted)" }}>
-                  Nenhum post agendado
-                </div>
-              )}
-
-              <Link
-                href="/calendar"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "6px",
-                  width: "100%",
-                  padding: "10px",
-                  background: "transparent",
-                  border: "1px dashed var(--border-light)",
-                  borderRadius: "10px",
-                  color: "var(--text-muted)",
-                  fontSize: "12px",
-                  cursor: "pointer",
-                  transition: "all 0.15s ease",
-                  marginTop: "2px",
-                  textDecoration: "none",
-                }}
-              >
-                <Calendar size={13} />
-                Ver calendário completo
-              </Link>
-            </div>
-          </div>
-        </div>
+          <aside className="next-panel">
+            <div className="pulse"><span /><i /><b><Orbit size={28} /></b></div>
+            <small>PRÓXIMO MOVIMENTO</small><h2>Sua próxima publicação começa aqui.</h2>
+            <p>O workspace está organizado. Dê forma à próxima ideia.</p>
+            <Link href="/compose">Abrir estúdio <ArrowUpRight size={16} /></Link>
+          </aside>
+        </section>
       </main>
-
       <style>{`
-        .metric-card:hover {
-          border-color: rgba(234,88,12, 0.3) !important;
-          transform: translateY(-2px);
-        }
+        .dash{display:flex;flex-direction:column;gap:16px}.command-hero{position:relative;min-height:310px;padding:34px 38px;display:grid;grid-template-columns:minmax(0,1.35fr) minmax(300px,.65fr);align-items:center;gap:42px;overflow:hidden;border:1px solid #2b2928;border-radius:28px;color:#fff;background:linear-gradient(120deg,#111112 0%,#0d0d0e 58%,#1b100a 100%);box-shadow:0 24px 70px rgba(0,0,0,.2);isolation:isolate}
+        .hero-grid{position:absolute;inset:0;z-index:-2;opacity:.18;background-image:linear-gradient(rgba(255,255,255,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.08) 1px,transparent 1px);background-size:42px 42px;mask-image:linear-gradient(90deg,#000,transparent 75%)}.command-hero:before{content:"";position:absolute;width:460px;height:460px;right:-100px;top:-160px;z-index:-1;border-radius:50%;background:radial-gradient(circle,rgba(249,85,12,.32),rgba(249,85,12,.06) 44%,transparent 70%);animation:glow 8s ease-in-out infinite}.command-hero:after{content:"";position:absolute;width:3px;height:58%;left:0;top:21%;background:linear-gradient(transparent,#ff5a0a,transparent);box-shadow:0 0 26px #ff5a0a}
+        .hero-rings{position:absolute;right:-35px;top:50%;width:320px;height:320px;transform:translateY(-50%);border:1px solid rgba(255,107,35,.2);border-radius:50%;animation:pulse 6s ease-in-out infinite}.hero-rings span,.hero-rings i{position:absolute;inset:44px;border:1px solid rgba(255,107,35,.2);border-radius:50%}.hero-rings i{inset:88px}.hero-copy,.console{position:relative;z-index:1}.kicker{display:inline-flex;align-items:center;gap:8px;color:#ff7a38;font-size:10px;font-weight:800;letter-spacing:.14em}.hero-copy h1{margin-top:18px;max-width:720px;font-size:clamp(36px,4.2vw,62px);line-height:.98;letter-spacing:-.055em;font-weight:800}.hero-copy h1 em{color:#ff5a0a;font-style:normal}.hero-copy p{margin-top:18px;max-width:570px;color:#aaa7a5;font-size:14px;line-height:1.7}.hero-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:24px}.hero-actions a{height:44px;padding:0 17px;display:inline-flex;align-items:center;gap:8px;border-radius:12px;text-decoration:none;font-size:12px;font-weight:800;transition:.2s}.hero-actions a:hover{transform:translateY(-2px)}.primary{color:#fff;background:#f4540b;box-shadow:0 10px 28px rgba(244,84,11,.28)}.secondary{color:#e5e5e5;border:1px solid #353333;background:rgba(255,255,255,.045)}
+        .console{padding:18px;border:1px solid rgba(255,255,255,.1);border-radius:20px;background:rgba(12,12,13,.72);backdrop-filter:blur(12px);box-shadow:0 18px 45px rgba(0,0,0,.3)}.console-head{display:flex;justify-content:space-between;padding-bottom:14px;color:#777;border-bottom:1px solid #282626}.console-head span{display:flex;align-items:center;gap:7px;font-size:9px;font-weight:800;letter-spacing:.12em}.console-head i,.live i{width:6px;height:6px;border-radius:50%;background:#ff5a0a;box-shadow:0 0 12px #ff5a0a}.console-status{display:flex;align-items:center;gap:12px;padding:18px 0}.console-status>b{width:42px;height:42px;display:grid;place-items:center;color:#ff6a21;border:1px solid rgba(255,90,10,.2);border-radius:13px;background:rgba(255,90,10,.1)}.console-status div{display:grid;gap:3px}.console-status small{color:#777;font-size:9px;letter-spacing:.11em}.console-status strong{font-size:15px}.console-lines{display:grid;gap:1px;overflow:hidden;border:1px solid #292727;border-radius:12px;background:#292727}.console-lines div{padding:10px 12px;display:flex;justify-content:space-between;background:#151516;color:#888;font-size:11px}.console-lines b{color:#fff}
+        .metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.metric-card,.flow-panel{border:1px solid var(--border);background:var(--bg-card)}.metric-card{min-height:166px;padding:18px;display:flex;flex-direction:column;justify-content:space-between;border-radius:18px;transition:.2s}.metric-card:hover{transform:translateY(-3px);border-color:rgba(244,84,11,.4)}.metric-head{display:flex;justify-content:space-between}.metric-icon{width:36px;height:36px;display:grid;place-items:center;color:#f4540b;border:1px solid rgba(244,84,11,.18);border-radius:11px;background:rgba(244,84,11,.08)}.live{display:flex;align-items:center;gap:6px;color:var(--text-muted);font-size:8px;font-weight:800;letter-spacing:.1em}.metric-card>strong{margin:13px 0 10px;color:var(--text-primary);font-size:29px;line-height:1}.metric-card h3{font-size:12px}.metric-card p{margin-top:3px;color:var(--text-muted);font-size:10px}
+        .dash-bottom{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(280px,.65fr);gap:16px}.flow-panel{padding:22px;border-radius:22px}.section-title{display:flex;justify-content:space-between;margin-bottom:17px;color:#f4540b}.section-title span,.next-panel>small{color:#f4540b;font-size:9px;font-weight:800;letter-spacing:.14em}.section-title h2{margin-top:4px;color:var(--text-primary);font-size:18px}.action-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.action-card{position:relative;min-height:190px;padding:16px;display:flex;flex-direction:column;color:inherit;overflow:hidden;border:1px solid var(--border);border-radius:16px;background:var(--bg-secondary);text-decoration:none;transition:.22s}.action-card:after{content:"";position:absolute;width:100px;height:100px;right:-55px;bottom:-55px;border-radius:50%;background:rgba(244,84,11,.08);transition:.25s}.action-card:hover{transform:translateY(-3px);border-color:rgba(244,84,11,.4);box-shadow:0 16px 35px rgba(0,0,0,.08)}.action-card:hover:after{transform:scale(1.7)}.index{position:absolute;right:14px;top:12px;color:var(--text-muted);font-size:9px}.action-icon{width:39px;height:39px;display:grid;place-items:center;color:#f4540b;border:1px solid rgba(244,84,11,.2);border-radius:12px;background:rgba(244,84,11,.07)}.action-card>div{margin-top:auto;position:relative;z-index:1}.action-card small{color:#f4540b;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em}.action-card h3{margin-top:4px;font-size:14px}.action-card p{margin-top:6px;color:var(--text-muted);font-size:10px;line-height:1.5}.arrow{position:absolute;right:14px;bottom:14px;color:var(--text-muted);opacity:0;transition:.2s}.action-card:hover .arrow{opacity:1}
+        .next-panel{position:relative;padding:22px;display:flex;flex-direction:column;justify-content:flex-end;min-height:286px;overflow:hidden;color:#fff;border:1px solid #302a26;border-radius:22px;background:linear-gradient(150deg,#171513,#0e0e0f)}.pulse{position:absolute;right:-50px;top:-70px;width:230px;height:230px;display:grid;place-items:center}.pulse span,.pulse i{position:absolute;inset:0;border:1px solid rgba(255,91,12,.2);border-radius:50%;animation:pulse 4s ease-in-out infinite}.pulse i{inset:38px;animation-delay:-2s}.pulse b{width:64px;height:64px;display:grid;place-items:center;color:#ff6420;border-radius:50%;background:rgba(255,92,15,.1);box-shadow:0 0 60px rgba(255,92,15,.3)}.next-panel h2{position:relative;max-width:300px;margin-top:9px;font-size:23px;line-height:1.1}.next-panel p{position:relative;margin-top:10px;color:#8e8a87;font-size:11px}.next-panel>a{position:relative;margin-top:18px;display:inline-flex;align-items:center;gap:7px;width:max-content;color:#fff;font-size:11px;font-weight:800;text-decoration:none}
+        html.light .metric-card,html.light .flow-panel{box-shadow:0 12px 38px rgba(33,24,18,.06)}html.light .action-card{background:#fffdfb}@keyframes glow{50%{transform:translate(-18px,18px) scale(1.08);opacity:.75}}@keyframes pulse{50%{transform:scale(.94);opacity:.45}}@media(max-width:1100px){.command-hero{grid-template-columns:1fr}.console{max-width:560px}.metrics{grid-template-columns:repeat(2,1fr)}.dash-bottom{grid-template-columns:1fr}}@media(max-width:720px){.command-hero{padding:28px 22px;border-radius:22px}.hero-copy h1{font-size:38px}.metrics,.action-grid{grid-template-columns:1fr}.metric-card{min-height:140px}.flow-panel{padding:16px}.action-card{min-height:150px}}@media(prefers-reduced-motion:reduce){.command-hero:before,.hero-rings,.pulse span,.pulse i{animation:none}}
       `}</style>
     </>
   );

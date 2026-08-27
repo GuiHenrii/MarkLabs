@@ -3,89 +3,159 @@ import { prisma } from "@marklabs/database";
 import { apiErrorResponse, requireTeamAccess } from "@/lib/authorization";
 import { FacebookProvider, InstagramProvider } from "@marklabs/social";
 
+function periodToDays(period: string) {
+  if (period === "7 dias") return 7;
+  if (period === "90 dias") return 90;
+  if (period === "6 meses") return 180;
+  return 30;
+}
+
 export async function GET(request: Request) {
-  const teamId = new URL(request.url).searchParams.get("teamId");
+  const { searchParams } = new URL(request.url);
+  const teamId = searchParams.get("teamId");
+  const accountIds = searchParams.getAll("accountIds");
+  const period = searchParams.get("period") ?? "30 dias";
+
   if (!teamId) return NextResponse.json({ error: "TeamId é obrigatório." }, { status: 400 });
+
   try {
     await requireTeamAccess(teamId);
+
     const socialAccounts = await prisma.socialAccount.findMany({
-      where: { teamId, isActive: true }, select: { id: true, platform: true, name: true, platformId: true, accessToken: true },
+      where: {
+        teamId,
+        isActive: true,
+        ...(accountIds.length > 0 ? { id: { in: accountIds } } : {}),
+      },
+      select: { id: true, platform: true, name: true, platformId: true, accessToken: true },
     });
 
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Data normalizada sem horário
+    today.setHours(0, 0, 0, 0);
+    const since = new Date(today);
+    since.setDate(since.getDate() - periodToDays(period));
 
-    // Coleta on-demand caso o banco esteja vazio ou não tenha o registro de hoje
-    for (const account of socialAccounts) {
-      if (!account.accessToken) continue;
+    const metaAppId = process.env.META_APP_ID;
+    const metaAppSecret = process.env.META_APP_SECRET;
+    const [facebookProvider, instagramProvider] =
+      metaAppId && metaAppSecret
+        ? [new FacebookProvider(metaAppId, metaAppSecret), new InstagramProvider(metaAppId, metaAppSecret)]
+        : [null, null];
 
-      const hasTodayAnalytics = await prisma.analytics.findFirst({
+    const warnings: string[] = [];
+
+    const liveMetrics = await Promise.all(
+      socialAccounts.map(async (account) => {
+        if (!account.accessToken) {
+          warnings.push(`${account.name}: sem access token.`);
+          return null;
+        }
+
+        try {
+          if (account.platform === "FACEBOOK" && facebookProvider) {
+            const metrics = await facebookProvider.getAnalytics(account.accessToken, account.platformId, since);
+            if (metrics.warnings?.length) warnings.push(`${account.name}: ${metrics.warnings.join(" ")}`);
+            return { accountId: account.id, metrics };
+          }
+
+          if (account.platform === "INSTAGRAM" && instagramProvider) {
+            const metrics = await instagramProvider.getAnalytics(account.accessToken, account.platformId);
+            if (metrics.warnings?.length) warnings.push(`${account.name}: ${metrics.warnings.join(" ")}`);
+            return { accountId: account.id, metrics };
+          }
+
+          warnings.push(`${account.name}: plataforma sem coletor de analytics.`);
+          return null;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          warnings.push(`${account.name}: falha ao coletar analytics (${message}).`);
+          console.error(`[ANALYTICS LIVE ERROR] Falha ao coletar métricas para ${account.name}:`, error);
+          return null;
+        }
+      })
+    );
+
+    for (const entry of liveMetrics) {
+      if (!entry) continue;
+      const { warnings: _warnings, ...persistableMetrics } = entry.metrics;
+      await prisma.analytics.upsert({
         where: {
-          socialAccountId: account.id,
+          socialAccountId_date: {
+            socialAccountId: entry.accountId,
+            date: today,
+          },
+        },
+        update: { ...persistableMetrics },
+        create: {
+          socialAccountId: entry.accountId,
           date: today,
+          ...persistableMetrics,
         },
       });
-
-      if (!hasTodayAnalytics) {
-        const appId = process.env.META_APP_ID;
-        const appSecret = process.env.META_APP_SECRET;
-        let provider = null;
-
-        if (account.platform === "FACEBOOK" && appId && appSecret) {
-          provider = new FacebookProvider(appId, appSecret);
-        } else if (account.platform === "INSTAGRAM" && appId && appSecret) {
-          provider = new InstagramProvider(appId, appSecret);
-        }
-
-        if (provider) {
-          try {
-            const metrics = await provider.getAnalytics(account.accessToken, account.platformId);
-            
-            await prisma.analytics.upsert({
-              where: {
-                socialAccountId_date: {
-                  socialAccountId: account.id,
-                  date: today,
-                },
-              },
-              update: {
-                ...metrics,
-              },
-              create: {
-                socialAccountId: account.id,
-                date: today,
-                ...metrics,
-              },
-            });
-          } catch (err) {
-            console.error(`[ANALYTICS SYNC ERROR] Falha ao coletar métricas para ${account.name}:`, err);
-          }
-        }
-      }
     }
 
     const records = await prisma.analytics.findMany({
-      where: { socialAccountId: { in: socialAccounts.map((account) => account.id) } },
+      where: {
+        socialAccountId: { in: socialAccounts.map((account) => account.id) },
+        date: { gte: since, lte: today },
+      },
       orderBy: { date: "asc" },
-      take: 30,
       include: { socialAccount: { select: { platform: true } } },
     });
 
+    const latestByAccount = new Map<string, (typeof records)[number]>();
+    for (const record of records) latestByAccount.set(record.socialAccountId, record);
+
+    const recordsWithLive = [...records];
+    for (const entry of liveMetrics) {
+      if (!entry) continue;
+      if (!recordsWithLive.some((record) => record.socialAccountId === entry.accountId && record.date.getTime() === today.getTime())) {
+        recordsWithLive.push({
+          id: `live-${entry.accountId}`,
+          socialAccountId: entry.accountId,
+          date: today,
+          followers: entry.metrics.followers,
+          impressions: entry.metrics.impressions,
+          reach: entry.metrics.reach,
+          engagement: entry.metrics.engagement,
+          likes: entry.metrics.likes,
+          comments: entry.metrics.comments,
+          shares: entry.metrics.shares,
+          createdAt: today,
+          socialAccount: { platform: socialAccounts.find((account) => account.id === entry.accountId)?.platform ?? null } as any,
+        });
+      }
+    }
+
     const latestFollowers = new Map<string, number>();
-    records.forEach(record => {
+    recordsWithLive.forEach((record) => {
       latestFollowers.set(record.socialAccountId, record.followers);
     });
+
     const currentFollowers = Array.from(latestFollowers.values()).reduce((sum, val) => sum + val, 0);
 
-    const summary = records.reduce((total, record) => ({
-      reach: total.reach + record.reach,
-      engagement: total.engagement + record.engagement,
-      shares: total.shares + record.shares,
-    }), { reach: 0, engagement: 0, shares: 0 });
+    const summary = socialAccounts.reduce(
+      (total, account) => {
+        const record = liveMetrics.find((item) => item?.accountId === account.id)?.metrics ?? latestByAccount.get(account.id);
+        if (!record) return total;
+        return {
+          reach: total.reach + record.reach,
+          engagement: total.engagement + record.engagement,
+          shares: total.shares + record.shares,
+        };
+      },
+      { reach: 0, engagement: 0, shares: 0 }
+    );
 
-    const finalSummary = { ...summary, followers: currentFollowers };
+    const recordsByDay = recordsWithLive.sort((a, b) => a.date.getTime() - b.date.getTime());
 
-    return NextResponse.json({ summary: finalSummary, records, connectedAccounts: socialAccounts });
+    return NextResponse.json({
+      summary: { ...summary, followers: currentFollowers },
+      records: recordsByDay,
+      connectedAccounts: socialAccounts,
+      warnings: Array.from(new Set(warnings)),
+      period,
+    });
   } catch (error) {
     const result = apiErrorResponse(error);
     return NextResponse.json({ error: result.error }, { status: result.status });

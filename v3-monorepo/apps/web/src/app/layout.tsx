@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { Viewport } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
+import { ChatWidget } from "@/components/chat/ChatWidget";
 
 export const metadata: Metadata = {
   title: {
@@ -38,6 +39,7 @@ export default function RootLayout({
     <html lang="pt-BR" suppressHydrationWarning className="dark">
       <body suppressHydrationWarning>
         <ThemeProvider>{children}</ThemeProvider>
+        <ChatWidget />
       </body>
     </html>
   );

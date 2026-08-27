@@ -2,18 +2,37 @@
 
 import { useEffect, useState, useCallback } from "react";
 import {
-  AreaChart, Area, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  AreaChart,
+  Area,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
 } from "recharts";
 import {
-  TrendingUp, DollarSign, MousePointerClick, Eye, Percent,
-  Target, BarChart2, Zap, ArrowUpRight, ArrowDownRight, RefreshCw, AlertCircle, Loader2, Download,
+  TrendingUp,
+  DollarSign,
+  MousePointerClick,
+  Eye,
+  Percent,
+  Target,
+  BarChart2,
+  Zap,
+  RefreshCw,
+  AlertCircle,
+  Loader2,
+  Download,
 } from "lucide-react";
 import { useTeam } from "@/components/providers/TeamProvider";
 
 function fmtBRL(n: number) {
   return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 2 });
 }
+
 function fmt(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
@@ -21,24 +40,30 @@ function fmt(n: number) {
 }
 
 const PERIODS = ["7 dias", "30 dias", "90 dias", "6 meses"];
-
 const PIE_COLORS = ["#00d4ff", "#fb923c", "#a78bfa", "#34d399", "#f472b6"];
 
 const STATUS_STYLES: Record<string, { bg: string; color: string; label: string }> = {
-  ACTIVE:   { bg: "rgba(52,211,153,0.15)",  color: "#34d399", label: "Ativo" },
-  PAUSED:   { bg: "rgba(251,191,36,0.15)",  color: "#fbbf24", label: "Pausado" },
-  DELETED:  { bg: "rgba(239,68,68,0.15)",   color: "#f87171", label: "Deletado" },
+  ACTIVE: { bg: "rgba(52,211,153,0.15)", color: "#34d399", label: "Ativo" },
+  PAUSED: { bg: "rgba(251,191,36,0.15)", color: "#fbbf24", label: "Pausado" },
+  DELETED: { bg: "rgba(239,68,68,0.15)", color: "#f87171", label: "Deletado" },
   ARCHIVED: { bg: "rgba(161,161,170,0.15)", color: "#a1a1aa", label: "Arquivado" },
 };
 
 const TOOLTIP_STYLE = {
-  background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "10px",
-  padding: "10px 14px", fontSize: "12px", color: "var(--text-primary)",
+  background: "var(--bg-card)",
+  border: "1px solid var(--border)",
+  borderRadius: "10px",
+  padding: "10px 14px",
+  fontSize: "12px",
+  color: "var(--text-primary)",
   boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
 };
 
 type MetaAdsData = {
   adAccountId: string;
+  sourceFacebookAccountId: string;
+  sourceFacebookAccountName: string;
+  adAccounts: Array<{ id: string; account_id: string; name?: string }>;
   period: string;
   since: string;
   until: string;
@@ -47,62 +72,126 @@ type MetaAdsData = {
   campaigns: Array<{ id: string; name: string; status: string; spend: number; impressions: number; clicks: number; ctr: number; cpc: number; cpm: number; reach: number }>;
 };
 
-export function AdsAnalytics() {
+export function AdsAnalytics({
+  selectedAccountIds,
+  selectedFacebookAccountId,
+  selectedFacebookAccountName,
+}: {
+  selectedAccountIds: string[];
+  selectedFacebookAccountId: string | null;
+  selectedFacebookAccountName: string | null;
+}) {
   const { teamId } = useTeam();
   const [period, setPeriod] = useState("30 dias");
   const [data, setData] = useState<MetaAdsData | null>(null);
+  const [selectedAdAccountId, setSelectedAdAccountId] = useState<string | null>(null);
+  const [adAccountMenuOpen, setAdAccountMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const storageKey = teamId && selectedFacebookAccountId ? `marklabs.analytics.ads.${teamId}.${selectedFacebookAccountId}` : null;
 
-  const load = useCallback(async (p: string) => {
-    if (!teamId) return;
-    setLoading(true);
-    setError(null);
+  const loadSavedAdAccount = (fallback: string | null, available: MetaAdsData["adAccounts"]) => {
+    if (typeof window === "undefined" || !storageKey) return fallback;
     try {
-      const res = await fetch(`/api/meta-ads?teamId=${teamId}&period=${encodeURIComponent(p)}`);
-      const json = await res.json();
-      if (!res.ok) { setError(json.error || "Erro ao carregar dados."); return; }
-      setData(json);
+      const raw = window.localStorage.getItem(storageKey);
+      if (!raw) return fallback;
+      const saved = JSON.parse(raw) as { adAccountId?: string };
+      if (saved.adAccountId && available.some((account) => account.id === saved.adAccountId)) return saved.adAccountId;
     } catch {
-      setError("Falha ao conectar com a API.");
-    } finally {
-      setLoading(false);
+      return fallback;
     }
-  }, [teamId]);
+    return fallback;
+  };
 
-  useEffect(() => { load(period); }, [period, load]);
+  const persistAdAccount = (nextId: string | null) => {
+    if (!storageKey || typeof window === "undefined") return;
+    if (!nextId) {
+      window.localStorage.removeItem(storageKey);
+      return;
+    }
+    window.localStorage.setItem(storageKey, JSON.stringify({ adAccountId: nextId }));
+  };
+
+  const load = useCallback(
+    async (p: string) => {
+      if (!teamId) return;
+      setLoading(true);
+      setError(null);
+      try {
+        const params = new URLSearchParams({ teamId, period: p });
+        selectedAccountIds.forEach((id) => params.append("accountIds", id));
+        if (selectedFacebookAccountId) params.set("facebookAccountId", selectedFacebookAccountId);
+        if (selectedAdAccountId) params.set("adAccountId", selectedAdAccountId);
+        const res = await fetch(`/api/meta-ads?${params.toString()}`);
+        const json = await res.json();
+        if (!res.ok) {
+          setError(json.error || "Erro ao carregar dados.");
+          return;
+        }
+        setData(json);
+        setSelectedAdAccountId((current) => {
+          const next = current ?? loadSavedAdAccount(json.adAccountId ?? null, json.adAccounts ?? []);
+          persistAdAccount(next);
+          return next;
+        });
+      } catch {
+        setError("Falha ao conectar com a API.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [teamId, selectedAccountIds, selectedFacebookAccountId, selectedAdAccountId]
+  );
+
+  useEffect(() => {
+    load(period);
+  }, [period, load]);
 
   const totals = data?.totals ?? { spend: 0, impressions: 0, clicks: 0 };
-  const ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions * 100) : 0;
-  const cpm = totals.impressions > 0 ? (totals.spend / totals.impressions * 1000) : 0;
-  const cpc = totals.clicks > 0 ? (totals.spend / totals.clicks) : 0;
+  const ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
+  const cpm = totals.impressions > 0 ? (totals.spend / totals.impressions) * 1000 : 0;
+  const cpc = totals.clicks > 0 ? totals.spend / totals.clicks : 0;
 
   const KPIs = [
-    { label: "Gasto Total",   value: fmtBRL(totals.spend),       icon: DollarSign,      color: "#00d4ff", glow: "rgba(0,212,255,0.25)" },
-    { label: "Impressões",    value: fmt(totals.impressions),     icon: Eye,             color: "#f472b6", glow: "rgba(244,114,182,0.25)" },
-    { label: "Cliques",       value: fmt(totals.clicks),          icon: MousePointerClick, color: "#34d399", glow: "rgba(52,211,153,0.25)" },
-    { label: "CTR",           value: `${ctr.toFixed(2)}%`,        icon: Target,          color: "#fbbf24", glow: "rgba(251,191,36,0.25)" },
-    { label: "CPM",           value: fmtBRL(cpm),                 icon: BarChart2,       color: "#60a5fa", glow: "rgba(96,165,250,0.25)" },
-    { label: "CPC",           value: fmtBRL(cpc),                 icon: Zap,             color: "#f87171", glow: "rgba(248,113,113,0.25)" },
-    { label: "Campanhas",     value: String(data?.campaigns.length ?? 0), icon: TrendingUp, color: "#a78bfa", glow: "rgba(167,139,250,0.25)" },
+    { label: "Gasto Total", value: fmtBRL(totals.spend), icon: DollarSign, color: "#00d4ff", glow: "rgba(0,212,255,0.25)" },
+    { label: "Impressões", value: fmt(totals.impressions), icon: Eye, color: "#f472b6", glow: "rgba(244,114,182,0.25)" },
+    { label: "Cliques", value: fmt(totals.clicks), icon: MousePointerClick, color: "#34d399", glow: "rgba(52,211,153,0.25)" },
+    { label: "CTR", value: `${ctr.toFixed(2)}%`, icon: Target, color: "#fbbf24", glow: "rgba(251,191,36,0.25)" },
+    { label: "CPM", value: fmtBRL(cpm), icon: BarChart2, color: "#60a5fa", glow: "rgba(96,165,250,0.25)" },
+    { label: "CPC", value: fmtBRL(cpc), icon: Zap, color: "#f87171", glow: "rgba(248,113,113,0.25)" },
+    { label: "Campanhas", value: String(data?.campaigns.length ?? 0), icon: TrendingUp, color: "#a78bfa", glow: "rgba(167,139,250,0.25)" },
     { label: "Alcance Total", value: fmt(data?.campaigns.reduce((s, c) => s + c.reach, 0) ?? 0), icon: Percent, color: "#fb923c", glow: "rgba(251,146,60,0.25)" },
   ];
 
-  // Pie data from campaigns by spend
   const pieData = (data?.campaigns ?? [])
-    .filter(c => c.spend > 0)
+    .filter((c) => c.spend > 0)
     .slice(0, 5)
     .map((c, i) => ({ name: c.name, value: c.spend, color: PIE_COLORS[i] }));
 
   const totalPieSpend = pieData.reduce((s, d) => s + d.value, 0);
-
-  // Top 5 campaigns by CTR for bar chart
   const topCTR = [...(data?.campaigns ?? [])].sort((a, b) => b.ctr - a.ctr).slice(0, 5);
   const maxCTR = topCTR[0]?.ctr || 1;
+  const adAccounts = data?.adAccounts ?? [];
+
+  useEffect(() => {
+    if (!selectedAdAccountId && adAccounts.length > 0) {
+      const next = loadSavedAdAccount(adAccounts[0].id, adAccounts) ?? adAccounts[0].id;
+      setSelectedAdAccountId(next);
+      persistAdAccount(next);
+    }
+  }, [adAccounts, selectedAdAccountId, selectedFacebookAccountId]);
+
+  useEffect(() => {
+    if (selectedAccountIds.length === 0) {
+      setData(null);
+      setLoading(false);
+    }
+  }, [selectedAccountIds.length]);
+
+  const currentAdAccount = adAccounts.find((account) => account.id === (selectedAdAccountId ?? data?.adAccountId ?? "")) ?? null;
 
   return (
     <>
-      {/* ── Print-only cover header ── */}
       <div className="print-header">
         <div className="print-logo-box">
           <div className="print-logo-icon">M</div>
@@ -127,18 +216,10 @@ export function AdsAnalytics() {
         </div>
       </div>
 
-      {/* ── Print-only KPI section ── */}
       <div className="print-body no-screen">
         <p className="print-section-title">Métricas de Desempenho (Ads)</p>
         <div className="print-kpi-grid">
-          {[ 
-            { label: "Gasto Total", value: fmtBRL(totals.spend) },
-            { label: "Impressões", value: fmt(totals.impressions) },
-            { label: "Cliques", value: fmt(totals.clicks) },
-            { label: "CTR", value: `${ctr.toFixed(2)}%` },
-            { label: "CPM", value: fmtBRL(cpm) },
-            { label: "CPC", value: fmtBRL(cpc) },
-          ].map((kpi) => (
+          {[{ label: "Gasto Total", value: fmtBRL(totals.spend) }, { label: "Impressões", value: fmt(totals.impressions) }, { label: "Cliques", value: fmt(totals.clicks) }, { label: "CTR", value: `${ctr.toFixed(2)}%` }, { label: "CPM", value: fmtBRL(cpm) }, { label: "CPC", value: fmtBRL(cpc) }].map((kpi) => (
             <div key={kpi.label} className="print-kpi-card">
               <p className="print-kpi-label">{kpi.label}</p>
               <p className="print-kpi-value">{kpi.value}</p>
@@ -148,25 +229,100 @@ export function AdsAnalytics() {
         </div>
       </div>
 
-      {/* Screen-only content */}
-
       <main style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "20px", flex: 1 }} className="animate-fade-in print-content">
-
-        {/* Header bar */}
         <div className="no-print" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", gap: "6px", background: "var(--bg-secondary)", border: "1px solid var(--border)", borderRadius: "10px", padding: "4px" }}>
             {PERIODS.map((p) => (
-              <button key={p} onClick={() => setPeriod(p)} style={{
-                padding: "7px 16px", borderRadius: "7px", border: "none", cursor: "pointer", fontSize: "12px", fontWeight: 600,
-                background: period === p ? "linear-gradient(135deg, #00b4d8, #0077b6)" : "transparent",
-                color: period === p ? "#fff" : "var(--text-muted)",
-                boxShadow: period === p ? "0 0 16px rgba(0,180,216,0.3)" : "none",
-                transition: "all 0.2s ease",
-              }}>{p}</button>
+              <button key={p} onClick={() => setPeriod(p)} style={{ padding: "7px 16px", borderRadius: "7px", border: "none", cursor: "pointer", fontSize: "12px", fontWeight: 600, background: period === p ? "linear-gradient(135deg, #00b4d8, #0077b6)" : "transparent", color: period === p ? "#fff" : "var(--text-muted)", boxShadow: period === p ? "0 0 16px rgba(0,180,216,0.3)" : "none", transition: "all 0.2s ease" }}>{p}</button>
             ))}
           </div>
 
-          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+            {selectedFacebookAccountName ? (
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 12px", background: "rgba(0,212,255,0.08)", border: "1px solid rgba(0,212,255,0.2)", borderRadius: "8px" }}>
+                <span style={{ fontSize: "11px", fontWeight: 600, color: "#00d4ff" }}>Facebook origem: {selectedFacebookAccountName}</span>
+              </div>
+            ) : null}
+
+            {adAccounts.length > 0 ? (
+              <div style={{ position: "relative", minWidth: "320px" }}>
+                <button
+                  type="button"
+                  onClick={() => setAdAccountMenuOpen((open) => !open)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "10px",
+                    width: "100%",
+                    padding: "8px 12px",
+                    background: "var(--bg-secondary)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "8px",
+                    color: "var(--text-primary)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", flexShrink: 0 }}>Conta de anúncios</span>
+                  <span style={{ fontSize: "11px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "right" }}>
+                    {currentAdAccount ? `${currentAdAccount.name ? `${currentAdAccount.name} · ` : ""}${currentAdAccount.id}` : data?.adAccountId ?? ""}
+                  </span>
+                </button>
+
+                {adAccountMenuOpen ? (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "calc(100% + 8px)",
+                      left: 0,
+                      right: 0,
+                      zIndex: 30,
+                      maxHeight: "260px",
+                      overflowY: "auto",
+                      background: "#111827",
+                      border: "1px solid var(--border)",
+                      borderRadius: "12px",
+                      boxShadow: "0 20px 50px rgba(0,0,0,0.45)",
+                      padding: "8px",
+                    }}
+                  >
+                    {adAccounts.map((account) => {
+                      const active = account.id === (selectedAdAccountId ?? data?.adAccountId ?? "");
+                      return (
+                        <button
+                          key={account.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedAdAccountId(account.id);
+                            persistAdAccount(account.id);
+                            setAdAccountMenuOpen(false);
+                          }}
+                          style={{
+                            width: "100%",
+                            textAlign: "left",
+                            padding: "10px 12px",
+                            borderRadius: "10px",
+                            border: "none",
+                            background: active ? "rgba(234,88,12,0.14)" : "transparent",
+                            color: active ? "#fff" : "var(--text-primary)",
+                            cursor: "pointer",
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: "2px",
+                          }}
+                        >
+                          <span style={{ fontSize: "12px", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {account.name ? `${account.name} · ${account.id}` : account.id}
+                          </span>
+                          {account.account_id ? <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>ID interno: {account.account_id}</span> : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
             {data && (
               <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 12px", background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.2)", borderRadius: "8px" }}>
                 <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#34d399", boxShadow: "0 0 6px #34d399" }} />
@@ -175,27 +331,50 @@ export function AdsAnalytics() {
                 </span>
               </div>
             )}
-            <button onClick={() => load(period)} disabled={loading} style={{
-              display: "flex", alignItems: "center", gap: "6px", padding: "7px 14px",
-              background: "var(--bg-secondary)", border: "1px solid var(--border-light)",
-              borderRadius: "8px", color: "var(--text-secondary)", fontSize: "12px", cursor: "pointer",
-            }}>
+
+            <button
+              onClick={() => load(period)}
+              disabled={loading}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "7px 14px",
+                background: "var(--bg-secondary)",
+                border: "1px solid var(--border-light)",
+                borderRadius: "8px",
+                color: "var(--text-secondary)",
+                fontSize: "12px",
+                cursor: "pointer",
+              }}
+            >
               <RefreshCw size={12} style={{ animation: loading ? "spin 1s linear infinite" : "none" }} />
               Atualizar
             </button>
 
-            <button onClick={() => window.print()} style={{
-              display: "flex", alignItems: "center", gap: "7px", padding: "8px 16px",
-              background: "linear-gradient(135deg, #00d4ff, #0077b6)", border: "none",
-              borderRadius: "8px", color: "#fff", fontSize: "12px", fontWeight: 600, cursor: "pointer",
-            }} className="no-print">
+            <button
+              onClick={() => window.print()}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "7px",
+                padding: "8px 16px",
+                background: "linear-gradient(135deg, #00d4ff, #0077b6)",
+                border: "none",
+                borderRadius: "8px",
+                color: "#fff",
+                fontSize: "12px",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+              className="no-print"
+            >
               <Download size={14} />
               Exportar PDF
             </button>
           </div>
         </div>
 
-        {/* Error state */}
         {error && (
           <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "16px 20px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: "12px" }}>
             <AlertCircle size={18} style={{ color: "#f87171", flexShrink: 0 }} />
@@ -206,7 +385,6 @@ export function AdsAnalytics() {
           </div>
         )}
 
-        {/* Loading */}
         {loading && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "60px", gap: "12px", color: "var(--text-secondary)" }}>
             <Loader2 size={22} style={{ animation: "spin 1s linear infinite" }} />
@@ -216,14 +394,21 @@ export function AdsAnalytics() {
 
         {!loading && !error && data && (
           <>
-            {/* KPI Grid */}
             <div className="no-print" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px" }}>
               {KPIs.map((kpi) => (
-                <div key={kpi.label} className="meta-kpi-card" style={{
-                  background: "var(--bg-card)",
-                  border: "1px solid var(--border)", borderRadius: "16px", padding: "18px 20px",
-                  position: "relative", overflow: "hidden", transition: "all 0.2s ease",
-                }}>
+                <div
+                  key={kpi.label}
+                  className="meta-kpi-card"
+                  style={{
+                    background: "var(--bg-card)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "16px",
+                    padding: "18px 20px",
+                    position: "relative",
+                    overflow: "hidden",
+                    transition: "all 0.2s ease",
+                  }}
+                >
                   <div style={{ position: "absolute", top: "-20px", right: "-20px", width: "80px", height: "80px", borderRadius: "50%", background: kpi.glow, filter: "blur(24px)", pointerEvents: "none" }} />
                   <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: `${kpi.color}18`, border: `1px solid ${kpi.color}30`, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "12px" }}>
                     <kpi.icon size={16} style={{ color: kpi.color }} />
@@ -234,22 +419,12 @@ export function AdsAnalytics() {
               ))}
             </div>
 
-            {/* Charts row */}
             <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: "16px" }}>
-              {/* Spend area chart */}
               <div className="print-chart-box print-text-dark" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "16px", padding: "22px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
                   <div>
                     <h2 style={{ fontSize: "14px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "3px" }}>Gasto Diário</h2>
                     <p style={{ fontSize: "12px", color: "var(--text-secondary)" }}>{period} — em R$</p>
-                  </div>
-                  <div style={{ display: "flex", gap: "14px" }}>
-                    {[{ label: "Gasto", color: "#00d4ff" }, { label: "Cliques", color: "#fb923c" }].map((l) => (
-                      <div key={l.label} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                        <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: l.color, boxShadow: `0 0 6px ${l.color}` }} />
-                        <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{l.label}</span>
-                      </div>
-                    ))}
                   </div>
                 </div>
                 <ResponsiveContainer width="100%" height={220}>
@@ -274,7 +449,6 @@ export function AdsAnalytics() {
                 </ResponsiveContainer>
               </div>
 
-              {/* CTR por campanha — barras */}
               <div className="print-chart-box print-text-dark" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "16px", padding: "22px" }}>
                 <h2 style={{ fontSize: "14px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "4px" }}>CTR por Campanha</h2>
                 <p style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "20px" }}>Top {topCTR.length} campanhas</p>
@@ -287,16 +461,16 @@ export function AdsAnalytics() {
                         <span style={{ fontSize: "11px", fontWeight: 700, color: i === 0 ? "#00d4ff" : "var(--text-primary)" }}>{c.ctr.toFixed(2)}%</span>
                       </div>
                       <div style={{ height: "5px", borderRadius: "20px", background: "var(--bg-hover)", overflow: "hidden" }}>
-                        <div style={{
-                          height: "100%",
-                          width: `${(c.ctr / maxCTR) * 100}%`,
-                          background: i === 0 ? "linear-gradient(90deg, #00b4d8, #00d4ff)"
-                            : i === 1 ? "linear-gradient(90deg, #ea580c, #fb923c)"
-                            : "linear-gradient(90deg, #6d28d9, #a78bfa)",
-                          borderRadius: "20px",
-                          boxShadow: i === 0 ? "0 0 8px rgba(0,212,255,0.5)" : "none",
-                          transition: "width 0.8s ease",
-                        }} />
+                        <div
+                          style={{
+                            height: "100%",
+                            width: `${(c.ctr / maxCTR) * 100}%`,
+                            background: i === 0 ? "linear-gradient(90deg, #00b4d8, #00d4ff)" : i === 1 ? "linear-gradient(90deg, #ea580c, #fb923c)" : "linear-gradient(90deg, #6d28d9, #a78bfa)",
+                            borderRadius: "20px",
+                            boxShadow: i === 0 ? "0 0 8px rgba(0,212,255,0.5)" : "none",
+                            transition: "width 0.8s ease",
+                          }}
+                        />
                       </div>
                     </div>
                   ))}
@@ -304,9 +478,7 @@ export function AdsAnalytics() {
               </div>
             </div>
 
-            {/* Bottom row */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "16px" }}>
-              {/* Pie — gasto por campanha */}
               <div className="print-chart-box print-text-dark" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "16px", padding: "22px" }}>
                 <h2 style={{ fontSize: "14px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "4px" }}>Gasto por Campanha</h2>
                 <p style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "12px" }}>Distribuição do orçamento</p>
@@ -331,9 +503,7 @@ export function AdsAnalytics() {
                             <div style={{ width: "8px", height: "8px", borderRadius: "2px", background: d.color, flexShrink: 0 }} />
                             <span style={{ fontSize: "11px", color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "130px" }}>{d.name}</span>
                           </div>
-                          <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-primary)" }}>
-                            {totalPieSpend > 0 ? `${((d.value / totalPieSpend) * 100).toFixed(0)}%` : "—"}
-                          </span>
+                          <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-primary)" }}>{totalPieSpend > 0 ? `${((d.value / totalPieSpend) * 100).toFixed(0)}%` : "—"}</span>
                         </div>
                       ))}
                     </div>
@@ -341,39 +511,123 @@ export function AdsAnalytics() {
                 )}
               </div>
 
-              {/* Campaign table */}
               <div className="print-chart-box print-text-dark" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "16px", padding: "22px" }}>
                 <div style={{ marginBottom: "16px" }}>
                   <h2 style={{ fontSize: "14px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "2px" }}>Campanhas</h2>
                   <p style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Desempenho detalhado • {data.campaigns.length} campanha(s)</p>
                 </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginBottom: "12px", fontSize: "12px", color: "var(--text-secondary)" }}>
+                  <span style={{ padding: "5px 8px", borderRadius: "999px", background: "rgba(0,212,255,0.08)", border: "1px solid rgba(0,212,255,0.18)", color: "#00d4ff", fontWeight: 600 }}>Facebook origem</span>
+                  <span>→</span>
+                  <span style={{ padding: "5px 8px", borderRadius: "999px", background: "rgba(251,146,60,0.08)", border: "1px solid rgba(251,146,60,0.18)", color: "#fb923c", fontWeight: 600 }}>{data.sourceFacebookAccountName}</span>
+                  <span>→</span>
+                  <span style={{ padding: "5px 8px", borderRadius: "999px", background: "rgba(167,139,250,0.08)", border: "1px solid rgba(167,139,250,0.18)", color: "#a78bfa", fontWeight: 600 }}>{selectedAdAccountId ?? data.adAccountId}</span>
+                  <span>→</span>
+                  <span style={{ padding: "5px 8px", borderRadius: "999px", background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.18)", color: "#34d399", fontWeight: 600 }}>campanhas</span>
+                </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "2fr 80px 90px 70px 70px 70px", gap: "8px", padding: "8px 12px", borderRadius: "8px", background: "var(--bg-secondary)", marginBottom: "8px" }}>
-                  {["Campanha", "Status", "Gasto", "CTR", "CPC", "Cliques"].map((h) => (
-                    <span key={h} style={{ fontSize: "10px", fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.08em" }}>{h}</span>
-                  ))}
+                <div style={{ position: "relative", marginBottom: "12px" }}>
+                  <button
+                    type="button"
+                    onClick={() => setAdAccountMenuOpen((open) => !open)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "10px",
+                      width: "100%",
+                      padding: "8px 12px",
+                      background: "var(--bg-secondary)",
+                      border: "1px solid var(--border)",
+                      borderRadius: "8px",
+                      color: "var(--text-primary)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", flexShrink: 0 }}>Conta de anúncios</span>
+                    <span style={{ fontSize: "11px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "right" }}>
+                      {currentAdAccount ? `${currentAdAccount.name ? `${currentAdAccount.name} · ` : ""}${currentAdAccount.id}` : data.adAccountId}
+                    </span>
+                  </button>
+
+                  {adAccountMenuOpen ? (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "calc(100% + 8px)",
+                        left: 0,
+                        right: 0,
+                        zIndex: 30,
+                        maxHeight: "260px",
+                        overflowY: "auto",
+                        background: "#111827",
+                        border: "1px solid var(--border)",
+                        borderRadius: "12px",
+                        boxShadow: "0 20px 50px rgba(0,0,0,0.45)",
+                        padding: "8px",
+                      }}
+                    >
+                      {adAccounts.map((account) => {
+                        const active = account.id === (selectedAdAccountId ?? data?.adAccountId ?? "");
+                        return (
+                          <button
+                            key={account.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedAdAccountId(account.id);
+                              persistAdAccount(account.id);
+                              setAdAccountMenuOpen(false);
+                            }}
+                            style={{
+                              width: "100%",
+                              textAlign: "left",
+                              padding: "10px 12px",
+                              borderRadius: "10px",
+                              border: "none",
+                              background: active ? "rgba(234,88,12,0.14)" : "transparent",
+                              color: active ? "#fff" : "var(--text-primary)",
+                              cursor: "pointer",
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "2px",
+                            }}
+                          >
+                            <span style={{ fontSize: "12px", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {account.name ? `${account.name} · ${account.id}` : account.id}
+                            </span>
+                            {account.account_id ? <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>ID interno: {account.account_id}</span> : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                 </div>
 
                 <div style={{ maxHeight: "280px", overflowY: "auto" }}>
-                  {data.campaigns.length === 0 && (
-                    <p style={{ fontSize: "12px", color: "var(--text-secondary)", padding: "12px" }}>Nenhuma campanha encontrada no período.</p>
-                  )}
+                  {data.campaigns.length === 0 && <p style={{ fontSize: "12px", color: "var(--text-secondary)", padding: "12px" }}>Nenhuma campanha encontrada no período.</p>}
                   {data.campaigns.map((c) => {
-                    const s = STATUS_STYLES[c.status] ?? STATUS_STYLES["ARCHIVED"];
+                    const s = STATUS_STYLES[c.status] ?? STATUS_STYLES.ARCHIVED;
                     return (
-                      <div key={c.id} className="meta-row" style={{
-                        display: "grid", gridTemplateColumns: "2fr 80px 90px 70px 70px 70px",
-                        gap: "8px", padding: "10px 12px", borderRadius: "8px",
-                        border: "1px solid transparent", transition: "all 0.15s ease", cursor: "pointer",
-                      }}>
+                      <div
+                        key={c.id}
+                        className="meta-row"
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "2fr 80px 90px 70px 70px 70px",
+                          gap: "8px",
+                          padding: "10px 12px",
+                          borderRadius: "8px",
+                          border: "1px solid transparent",
+                          transition: "all 0.15s ease",
+                          cursor: "pointer",
+                        }}
+                      >
                         <div>
                           <p style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</p>
                           <p style={{ fontSize: "10px", color: "var(--text-secondary)" }}>{c.impressions.toLocaleString("pt-BR")} impr.</p>
                         </div>
                         <div style={{ alignSelf: "center" }}>
-                          <span style={{ fontSize: "10px", fontWeight: 700, padding: "3px 8px", borderRadius: "20px", background: s.bg, color: s.color }}>
-                            {s.label}
-                          </span>
+                          <span style={{ fontSize: "10px", fontWeight: 700, padding: "3px 8px", borderRadius: "20px", background: s.bg, color: s.color }}>{s.label}</span>
                         </div>
                         <span style={{ fontSize: "12px", color: "var(--text-secondary)", alignSelf: "center" }}>{fmtBRL(c.spend)}</span>
                         <span style={{ fontSize: "12px", color: "#00d4ff", fontWeight: 600, alignSelf: "center" }}>{c.ctr.toFixed(2)}%</span>
@@ -388,7 +642,12 @@ export function AdsAnalytics() {
           </>
         )}
 
-        {/* Print-only footer */}
+        {!loading && selectedAccountIds.length === 0 ? (
+          <div style={{ padding: "20px", borderRadius: "14px", border: "1px dashed var(--border)", background: "var(--bg-card)", color: "var(--text-muted)", fontSize: "13px" }}>
+            Selecione uma ou mais contas para ver as métricas de tráfego pago.
+          </div>
+        ) : null}
+
         <div className="print-footer no-screen">
           <p className="print-footer-left">Gerado por MarkLabs · marklabs.com.br · Todos os dados são referentes ao período selecionado.</p>
           <p className="print-footer-brand" style={{ color: "#00d4ff" }}>MarkLabs Ads Report</p>

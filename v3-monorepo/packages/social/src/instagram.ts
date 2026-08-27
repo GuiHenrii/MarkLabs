@@ -1,7 +1,7 @@
 import { Platform } from "@marklabs/database";
 import { AnalyticsSnapshot, PublishInput, PublishResult, SocialProvider } from "./index";
 
-const GRAPH_API = "https://graph.facebook.com/v20.0";
+const GRAPH_API = "https://graph.facebook.com/v25.0";
 
 interface InstagramAccountType {
   id: string;
@@ -10,21 +10,55 @@ interface InstagramAccountType {
   profile_picture_url?: string;
 }
 
+type InstagramInsight = { name: string; values?: Array<{ value?: number }>; total_value?: { value?: number } };
+
 export class InstagramProvider implements SocialProvider {
   platform = Platform.INSTAGRAM;
 
-  constructor(private readonly clientId: string, private readonly clientSecret: string) {}
+  constructor(
+    private readonly clientId: string,
+    private readonly clientSecret: string,
+    private readonly loginConfigId?: string
+  ) {}
+
+  private async getInsightMetrics(accessToken: string, platformId: string, metric: string, extraParams?: Record<string, string>) {
+    const response = await fetch(`${GRAPH_API}/${platformId}/insights?${new URLSearchParams({
+      metric,
+      period: "day",
+      access_token: accessToken,
+      ...extraParams,
+    })}`);
+    const data = (await response.json().catch(() => ({}))) as {
+      data?: InstagramInsight[];
+      error?: { code?: number; message?: string };
+    };
+
+    return {
+      ok: response.ok,
+      data: response.ok ? data.data ?? [] : [],
+      message: data.error?.message,
+      code: data.error?.code,
+    };
+  }
 
   getAuthUrl(redirectUri: string, state: string) {
-    return `https://www.facebook.com/v20.0/dialog/oauth?${new URLSearchParams({
+    const params = new URLSearchParams({
       client_id: this.clientId,
       redirect_uri: redirectUri,
       state,
-      scope: "instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement,pages_manage_metadata,business_management,ads_read,ads_management",
-      response_type: "code",
-      auth_type: "rerequest",
-      return_scopes: "true",
-    })}`;
+    });
+
+    if (this.loginConfigId) {
+      params.set("config_id", this.loginConfigId);
+      params.set("response_type", "code");
+      params.set("override_default_response_type", "true");
+    } else {
+      params.set("scope", "instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement,pages_manage_metadata");
+      params.set("response_type", "code");
+      params.set("return_scopes", "true");
+    }
+
+    return `https://www.facebook.com/v25.0/dialog/oauth?${params}`;
   }
 
   async exchangeCode(code: string, redirectUri: string) {
@@ -39,14 +73,16 @@ export class InstagramProvider implements SocialProvider {
     if (!tokenResponse.ok) throw new Error("Não foi possível trocar o código OAuth do Instagram/Facebook.");
     const token = await tokenResponse.json() as { access_token: string; expires_in?: number };
 
+    const allIgAccounts: Array<InstagramAccountType> = [];
+
     // 2. Buscar a conta do Instagram Business vinculada à página do Facebook
     let pagesResponse = await fetch(`${GRAPH_API}/me/accounts?${new URLSearchParams({
       fields: "id,name,instagram_business_account{id,username,name,profile_picture_url}",
+      limit: "100",
       access_token: token.access_token,
     })}`);
 
     let pagesText = await pagesResponse.text();
-    console.log("[INSTAGRAM DEBUG] Resposta de /me/accounts:", pagesText);
     
     let pages = JSON.parse(pagesText) as {
       data?: Array<{
@@ -56,153 +92,124 @@ export class InstagramProvider implements SocialProvider {
         instagram_business_account?: InstagramAccountType;
       }>;
     };
-    const primaryPage = pages.data?.find((p) => p.instagram_business_account);
-    let igAccount: InstagramAccountType | undefined = primaryPage?.instagram_business_account;
-    let pageAccessToken: string | undefined = primaryPage?.access_token;
+    if (pages.data) {
+      for (const p of pages.data) {
+        if (p.instagram_business_account) allIgAccounts.push(p.instagram_business_account);
+      }
+    }
 
-    // Se não encontrou nas páginas pessoais, busca via Business Manager
-    if (!igAccount) {
-      console.log("[INSTAGRAM DEBUG] Buscando contas do Instagram via Business API...");
-      const bizResponse = await fetch(`${GRAPH_API}/me/businesses?${new URLSearchParams({ access_token: token.access_token })}`);
-      const bizData = await bizResponse.json() as { data?: Array<{ id: string; name: string }> };
-      const business = bizData.data?.[0];
+    const bizResponse = await fetch(`${GRAPH_API}/me/businesses?${new URLSearchParams({ limit: "100", access_token: token.access_token })}`);
+    const bizData = await bizResponse.json() as { data?: Array<{ id: string; name: string }> };
 
-      if (business) {
+    if (bizData.data) {
+      for (const business of bizData.data) {
         // 1. Tenta buscar contas do Instagram vinculadas diretamente ao Business Manager
         const bizIgResponse = await fetch(`${GRAPH_API}/${business.id}/instagram_accounts?${new URLSearchParams({ 
           fields: "id,username,name,profile_pic", 
+          limit: "100",
           access_token: token.access_token 
         })}`);
         const bizIgData = await bizIgResponse.json() as { data?: Array<{ id: string; username: string; name?: string; profile_pic?: string }> };
         
-        if (bizIgData.data && bizIgData.data.length > 0) {
-          console.log("[INSTAGRAM DEBUG] Contas encontradas diretamente no Business:", bizIgData.data);
-          const first = bizIgData.data[0];
-          if (first) {
-            igAccount = {
+        if (bizIgData.data) {
+          for (const first of bizIgData.data) {
+            allIgAccounts.push({
               id: first.id,
               username: first.username,
               name: first.name || first.username,
               profile_picture_url: first.profile_pic
-            };
+            });
           }
         }
 
-        // 2. Se não achou direto, varre TODAS as páginas (owned e client) procurando o Instagram
-        if (!igAccount) {
-          for (const edge of ["owned_pages", "client_pages"]) {
-            const bizPagesResponse = await fetch(`${GRAPH_API}/${business.id}/${edge}?${new URLSearchParams({ 
-              fields: "id,name,instagram_business_account{id,username,name,profile_picture_url}", 
-              access_token: token.access_token 
-            })}`);
-            const bizPagesData = await bizPagesResponse.json() as { data?: Array<{ id: string; name: string; instagram_business_account?: { id: string; username: string; name: string; profile_picture_url?: string } }> };
-            
-            if (bizPagesData.data && bizPagesData.data.length > 0) {
-              console.log(`[INSTAGRAM DEBUG] Páginas encontradas em ${edge}:`, bizPagesData.data.map(p => ({ id: p.id, name: p.name, hasIg: !!p.instagram_business_account })));
-              // Encontra a primeira página que REALMENTE tem Instagram vinculado (ex: Mark Share)
-              const pageWithIg = bizPagesData.data.find(p => p.instagram_business_account);
-              if (pageWithIg?.instagram_business_account) {
-                igAccount = pageWithIg.instagram_business_account;
-                break;
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // Se ainda não encontrou, tenta buscar direto no endpoint de Instagram do usuário ou pelo ID autorizado
-    if (!igAccount) {
-      console.log("[INSTAGRAM DEBUG] Tentando buscar detalhes diretos do Instagram...");
-      // Tenta buscar no perfil direto do usuário
-      const directIg = await fetch(`${GRAPH_API}/me?${new URLSearchParams({ 
-        fields: "accounts{instagram_business_account{id,username,name,profile_picture_url}}", 
-        access_token: token.access_token 
-      })}`);
-      const directIgData = await directIg.json() as any;
-      const directFound = directIgData.accounts?.data?.find((p: any) => p.instagram_business_account)?.instagram_business_account;
-      if (directFound) {
-        igAccount = directFound;
-      }
-    }
-
-    // Se a API ainda não listou mas você autorizou a conta no diálogo, consulta a conta do Instagram dinamicamente via debug_token
-    if (!igAccount) {
-      console.log("[INSTAGRAM DEBUG] Inspecionando escopos do token para encontrar IDs de Instagram autorizados...");
-      try {
-        const debugTokenResponse = await fetch(`${GRAPH_API}/debug_token?${new URLSearchParams({
-          input_token: token.access_token,
-          access_token: `${this.clientId}|${this.clientSecret}`,
-        })}`);
-        const debugTokenData = await debugTokenResponse.json() as any;
-        
-        // Extrai os IDs das contas ou páginas que o usuário selecionou na tela
-        const granularScopes = debugTokenData?.data?.granular_scopes || [];
-        const igScope = granularScopes.find((s: any) => s.scope === "instagram_basic" || s.scope === "pages_show_list");
-        const targetIds: string[] = igScope?.target_ids || [];
-
-        console.log("[INSTAGRAM DEBUG] IDs autorizados encontrados no token:", targetIds);
-
-        for (const targetId of targetIds) {
-          console.log(`[INSTAGRAM DEBUG] Consultando nó autorizado: ${targetId}`);
-          
-          // 1. Busca os dados da página do Facebook usando 'picture' (correto para páginas)
-          const nodeResponse = await fetch(`${GRAPH_API}/${targetId}?${new URLSearchParams({ 
-            fields: "id,name,access_token,picture,instagram_business_account{id,username,name,profile_picture_url}", 
+        // 2. Varre TODAS as páginas (owned e client) procurando o Instagram
+        for (const edge of ["owned_pages", "client_pages"]) {
+          const bizPagesResponse = await fetch(`${GRAPH_API}/${business.id}/${edge}?${new URLSearchParams({ 
+            fields: "id,name,instagram_business_account{id,username,name,profile_picture_url}", 
+            limit: "100",
             access_token: token.access_token 
           })}`);
-          const nodeData = await nodeResponse.json() as any;
-          console.log(`[INSTAGRAM DEBUG] Resposta do nó ${targetId}:`, nodeData);
-
-          if (nodeData && !nodeData.error) {
-            // Se o nó já retornou o Instagram vinculado
-            if (nodeData.instagram_business_account) {
-              igAccount = nodeData.instagram_business_account;
-              break;
-            }
-
-            // Se for uma página e tiver Page Access Token, consulta o nó do Instagram diretamente
-            if (nodeData.access_token) {
-              const pageIgResponse = await fetch(`${GRAPH_API}/${targetId}?${new URLSearchParams({ 
-                fields: "instagram_business_account{id,username,name,profile_picture_url}", 
-                access_token: nodeData.access_token 
-              })}`);
-              const pageIgData = await pageIgResponse.json() as any;
-              console.log(`[INSTAGRAM DEBUG] Resposta com Page Token para ${targetId}:`, pageIgData);
-              if (pageIgData?.instagram_business_account) {
-                igAccount = pageIgData.instagram_business_account;
-                pageAccessToken = nodeData.access_token ?? pageAccessToken;
-                break;
-              }
-            }
-          } else {
-            // Se o nó for diretamente uma conta de Instagram (e não uma página)
-            const directIgResponse = await fetch(`${GRAPH_API}/${targetId}?${new URLSearchParams({ 
-              fields: "id,username,name,profile_picture_url", 
-              access_token: token.access_token 
-            })}`);
-            const directIgData = await directIgResponse.json() as any;
-            if (directIgData && !directIgData.error && directIgData.username) {
-              igAccount = directIgData;
-              break;
+          const bizPagesData = await bizPagesResponse.json() as { data?: Array<{ id: string; name: string; instagram_business_account?: InstagramAccountType }> };
+          
+          if (bizPagesData.data) {
+            for (const p of bizPagesData.data) {
+              if (p.instagram_business_account) allIgAccounts.push(p.instagram_business_account);
             }
           }
         }
-      } catch (err) {
-        console.error("[INSTAGRAM DEBUG] Erro ao inspecionar debug_token:", err);
       }
     }
 
-    if (!igAccount) throw new Error("Nenhuma conta do Instagram Business encontrada vinculada às suas páginas do Facebook.");
+    // Tenta buscar no perfil direto do usuário
+    const directIg = await fetch(`${GRAPH_API}/me?${new URLSearchParams({ 
+      fields: "accounts.limit(100){instagram_business_account{id,username,name,profile_picture_url}}", 
+      access_token: token.access_token 
+    })}`);
+    const directIgData = await directIg.json() as any;
+    if (directIgData.accounts?.data) {
+      for (const p of directIgData.accounts.data) {
+        if (p.instagram_business_account) allIgAccounts.push(p.instagram_business_account);
+      }
+    }
 
-    return {
-      accessToken: pageAccessToken ?? token.access_token,
+    try {
+      const debugTokenResponse = await fetch(`${GRAPH_API}/debug_token?${new URLSearchParams({
+        input_token: token.access_token,
+        access_token: `${this.clientId}|${this.clientSecret}`,
+      })}`);
+      const debugTokenData = await debugTokenResponse.json() as any;
+      
+      const granularScopes = debugTokenData?.data?.granular_scopes || [];
+      const igScope = granularScopes.find((s: any) => s.scope === "instagram_basic" || s.scope === "pages_show_list");
+      const targetIds: string[] = igScope?.target_ids || [];
+
+      for (const targetId of targetIds) {
+        const nodeResponse = await fetch(`${GRAPH_API}/${targetId}?${new URLSearchParams({ 
+          fields: "id,name,access_token,picture,instagram_business_account{id,username,name,profile_picture_url}", 
+          access_token: token.access_token 
+        })}`);
+        const nodeData = await nodeResponse.json() as any;
+
+        if (nodeData && !nodeData.error) {
+          if (nodeData.instagram_business_account) {
+            allIgAccounts.push(nodeData.instagram_business_account);
+          }
+          if (nodeData.access_token) {
+            const pageIgResponse = await fetch(`${GRAPH_API}/${targetId}?${new URLSearchParams({ 
+              fields: "instagram_business_account{id,username,name,profile_picture_url}", 
+              access_token: nodeData.access_token 
+            })}`);
+            const pageIgData = await pageIgResponse.json() as any;
+            if (pageIgData?.instagram_business_account) {
+              allIgAccounts.push(pageIgData.instagram_business_account);
+            }
+          }
+        } else {
+          const directIgResponse = await fetch(`${GRAPH_API}/${targetId}?${new URLSearchParams({ 
+            fields: "id,username,name,profile_picture_url", 
+            access_token: token.access_token 
+          })}`);
+          const directIgData = await directIgResponse.json() as any;
+          if (directIgData && !directIgData.error && directIgData.username) {
+            allIgAccounts.push(directIgData);
+          }
+        }
+      }
+    } catch {
+    }
+
+    const uniqueIgs = Array.from(new Map(allIgAccounts.map((a) => [a.id, a])).values());
+
+    if (uniqueIgs.length === 0) throw new Error("Nenhuma conta do Instagram Business encontrada vinculada às suas páginas do Facebook.");
+
+    return uniqueIgs.map((igAccount) => ({
+      accessToken: token.access_token, // USE USER TOKEN
       platformId: igAccount.id,
       name: igAccount.name || igAccount.username,
       username: igAccount.username,
       avatar: igAccount.profile_picture_url,
       tokenExpiry: token.expires_in ? new Date(Date.now() + token.expires_in * 1000) : undefined,
-    };
+    }));
   }
 
   async publish(accessToken: string, platformId: string, input: PublishInput): Promise<PublishResult> {
@@ -354,14 +361,11 @@ export class InstagramProvider implements SocialProvider {
   }
 
   async getAnalytics(accessToken: string, platformId: string): Promise<AnalyticsSnapshot> {
-    const [accountResponse, insightsResponse, mediaResponse] = await Promise.all([
+    const warnings: string[] = [];
+
+    const [accountResponse, mediaResponse] = await Promise.all([
       fetch(`${GRAPH_API}/${platformId}?${new URLSearchParams({
         fields: "followers_count,media_count,username,name",
-        access_token: accessToken,
-      })}`),
-      fetch(`${GRAPH_API}/${platformId}/insights?${new URLSearchParams({
-        metric: "impressions,reach,profile_views",
-        period: "day",
         access_token: accessToken,
       })}`),
       fetch(`${GRAPH_API}/${platformId}/media?${new URLSearchParams({
@@ -374,26 +378,52 @@ export class InstagramProvider implements SocialProvider {
     if (!accountResponse.ok) {
       const errorData = await accountResponse.json().catch(() => ({}));
       console.error("[INSTAGRAM ANALYTICS ERROR]", errorData);
-      return { followers: 0, impressions: 0, reach: 0, engagement: 0, likes: 0, comments: 0, shares: 0 };
+      warnings.push("Instagram não retornou dados da conta.");
+      return { followers: 0, impressions: 0, reach: 0, engagement: 0, likes: 0, comments: 0, shares: 0, warnings };
     }
 
     const accountData = (await accountResponse.json()) as { followers_count?: number };
-    const insightsData = insightsResponse.ok
-      ? (await insightsResponse.json()) as {
-          data?: Array<{ name: string; values?: Array<{ value: number }> }>;
-        }
-      : {};
     const mediaData = mediaResponse.ok
       ? (await mediaResponse.json()) as { data?: Array<{ like_count?: number; comments_count?: number }> }
       : {};
+    if (!mediaResponse.ok) warnings.push("Instagram não retornou métricas de mídia.");
     const mediaItems = mediaData.data ?? [];
 
-    const byName = new Map((insightsData.data ?? []).map((item) => [item.name, item.values?.[0]?.value ?? 0]));
-    const impressions = byName.get("impressions") ?? 0;
+    let insightsData: { data?: InstagramInsight[] } = {};
+    const [reachInsights, totalInsights, profileViewInsights] = await Promise.all([
+      this.getInsightMetrics(accessToken, platformId, "reach"),
+      this.getInsightMetrics(accessToken, platformId, "views,accounts_engaged,total_interactions,likes,comments,shares,saves", { metric_type: "total_value" }),
+      this.getInsightMetrics(accessToken, platformId, "profile_views", { metric_type: "total_value" }),
+    ]);
+
+    if (reachInsights.ok) {
+      insightsData.data = [...(insightsData.data ?? []), ...reachInsights.data];
+    } else if (reachInsights.code !== 10) {
+      warnings.push(reachInsights.message || "Instagram nao retornou alcance para esta conta.");
+    }
+
+    if (totalInsights.ok) {
+      insightsData.data = [...(insightsData.data ?? []), ...totalInsights.data];
+    } else if (totalInsights.code !== 10) {
+      warnings.push(totalInsights.message || "Instagram nao retornou totais para esta conta.");
+    }
+
+    if (profileViewInsights.ok) {
+      insightsData.data = [...(insightsData.data ?? []), ...profileViewInsights.data];
+    } else if (profileViewInsights.code !== 10) {
+      warnings.push(profileViewInsights.message || "Instagram nao retornou visualizacoes de perfil.");
+    }
+
+    const byName = new Map((insightsData.data ?? []).map((item) => [item.name, item.total_value?.value ?? item.values?.[0]?.value ?? 0]));
+    const impressions = byName.get("views") ?? 0;
     const reach = byName.get("reach") ?? 0;
-    const engagement = byName.get("profile_views") ?? 0;
-    const likes = mediaItems.reduce((sum, media) => sum + (media.like_count ?? 0), 0);
-    const comments = mediaItems.reduce((sum, media) => sum + (media.comments_count ?? 0), 0);
+    const mediaLikes = mediaItems.reduce((sum, media) => sum + (media.like_count ?? 0), 0);
+    const mediaComments = mediaItems.reduce((sum, media) => sum + (media.comments_count ?? 0), 0);
+    const likes = byName.get("likes") ?? mediaLikes;
+    const comments = byName.get("comments") ?? mediaComments;
+    const shares = byName.get("shares") ?? 0;
+    const saves = byName.get("saves") ?? 0;
+    const engagement = Math.max(byName.get("total_interactions") ?? 0, byName.get("accounts_engaged") ?? 0, likes + comments + shares + saves);
 
     return {
       followers: accountData.followers_count ?? 0,
@@ -402,7 +432,8 @@ export class InstagramProvider implements SocialProvider {
       engagement,
       likes,
       comments,
-      shares: 0,
+      shares,
+      warnings,
     };
   }
 

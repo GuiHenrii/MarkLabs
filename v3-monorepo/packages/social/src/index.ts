@@ -30,6 +30,7 @@ export interface AnalyticsSnapshot {
   likes: number;
   comments: number;
   shares: number;
+  warnings?: string[];
 }
 
 export interface SocialProvider {
@@ -43,7 +44,7 @@ export interface SocialProvider {
   /**
    * Exchanges an authorization code for an access token (and refresh token).
    */
-  exchangeCode(code: string, redirectUri: string): Promise<{ accessToken: string; refreshToken?: string; tokenExpiry?: Date; platformId: string; name: string; username?: string; avatar?: string; }>;
+  exchangeCode(code: string, redirectUri: string): Promise<Array<{ accessToken: string; refreshToken?: string; tokenExpiry?: Date; platformId: string; name: string; username?: string; avatar?: string; }>>;
 
   /**
    * Publishes content to the social network.

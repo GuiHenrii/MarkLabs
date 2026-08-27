@@ -3,7 +3,7 @@
 import { Bell, Search, Plus, Menu } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useTheme } from "@/components/providers/ThemeProvider";
 
 interface TopbarProps {
   title: string;
@@ -13,7 +13,8 @@ interface TopbarProps {
 export function Topbar({ title, subtitle }: TopbarProps) {
   const [showNotifications, setShowNotifications] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const router = useRouter();
+  const { theme } = useTheme();
+  const isLight = theme === "light";
 
   const handleSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && searchQuery.trim()) {
@@ -25,14 +26,14 @@ export function Topbar({ title, subtitle }: TopbarProps) {
   return (
     <header
       style={{
-        height: "64px",
-        background: "var(--bg-secondary)",
+        background: isLight ? "rgba(255,255,255,0.92)" : "var(--bg-secondary)",
         borderBottom: "1px solid var(--border)",
         display: "flex",
         alignItems: "center",
         paddingLeft: "24px",
         paddingRight: "24px",
         gap: "16px",
+        minHeight: "64px",
         position: "sticky",
         top: 0,
         zIndex: 30,
@@ -49,7 +50,7 @@ export function Topbar({ title, subtitle }: TopbarProps) {
           height: "40px",
           borderRadius: "10px",
           border: "1px solid var(--border)",
-          background: "var(--bg-card)",
+          background: isLight ? "rgba(255,255,255,0.95)" : "var(--bg-card)",
           color: "var(--text-primary)",
           alignItems: "center",
           justifyContent: "center",
@@ -61,7 +62,7 @@ export function Topbar({ title, subtitle }: TopbarProps) {
       </button>
 
       {/* Title */}
-      <div style={{ flex: 1 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
         <h1
           style={{
             fontSize: "17px",
@@ -85,7 +86,7 @@ export function Topbar({ title, subtitle }: TopbarProps) {
           display: "flex",
           alignItems: "center",
           gap: "8px",
-          background: "var(--bg-card)",
+          background: isLight ? "rgba(255,255,255,0.95)" : "var(--bg-card)",
           border: "1px solid var(--border)",
           borderRadius: "8px",
           padding: "0 12px",
@@ -94,7 +95,7 @@ export function Topbar({ title, subtitle }: TopbarProps) {
           cursor: "text",
           transition: "border-color 0.15s ease",
         }}
-        className="mobile-hide-sm"
+        className="mobile-hide-sm mobile-topbar-actions"
       >
         <Search size={14} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
         <input
@@ -147,7 +148,7 @@ export function Topbar({ title, subtitle }: TopbarProps) {
           onClick={() => setShowNotifications(!showNotifications)}
           style={{
             position: "relative",
-            background: "var(--bg-card)",
+            background: isLight ? "rgba(255,255,255,0.95)" : "var(--bg-card)",
             border: "1px solid var(--border)",
             borderRadius: "8px",
             width: "36px",
@@ -182,7 +183,7 @@ export function Topbar({ title, subtitle }: TopbarProps) {
               top: "44px",
               right: 0,
               width: "280px",
-              background: "var(--bg-card)",
+              background: isLight ? "rgba(255,255,255,0.98)" : "var(--bg-card)",
               border: "1px solid var(--border)",
               borderRadius: "12px",
               boxShadow: "0 8px 32px rgba(0,0,0,0.15)",

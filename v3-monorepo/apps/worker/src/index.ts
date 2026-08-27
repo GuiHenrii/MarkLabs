@@ -109,8 +109,9 @@ async function collectAnalyticsForAccount(account: {
             error: error instanceof Error ? error.message : String(error),
           });
           return emptySnapshot();
-        })
+      })
       : emptySnapshot();
+  const { warnings: _warnings, ...persistableMetrics } = metrics as AnalyticsSnapshot & { warnings?: string[] };
 
   await prisma.analytics.upsert({
     where: {
@@ -120,12 +121,12 @@ async function collectAnalyticsForAccount(account: {
       },
     },
     update: {
-      ...metrics,
+      ...persistableMetrics,
     },
     create: {
       socialAccountId: account.id,
       date: today,
-      ...metrics,
+      ...persistableMetrics,
     },
   });
 

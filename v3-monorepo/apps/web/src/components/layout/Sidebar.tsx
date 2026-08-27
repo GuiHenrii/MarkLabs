@@ -9,7 +9,6 @@ import {
   PenSquare,
   BarChart2,
   Image,
-  Users,
   Settings,
   ChevronRight,
   LogOut,
@@ -29,7 +28,6 @@ const navItems = [
   { href: "/calendar", icon: Calendar, label: "Calendário" },
   { href: "/analytics", icon: BarChart2, label: "Performance" },
   { href: "/media", icon: Image, label: "Mídias" },
-  { href: "/team", icon: Users, label: "Equipe" },
 ];
 
 const bottomItems = [{ href: "/settings", icon: Settings, label: "Configurações" }];
@@ -52,15 +50,19 @@ export function Sidebar() {
   }, []);
 
   useEffect(() => {
-    setMobileOpen(false);
+    window.dispatchEvent(new Event("marklabs:close-sidebar"));
   }, [pathname]);
+
+  const isLight = theme === "light";
 
   return (
     <aside
       style={{
-        width: "240px",
+        width: "248px",
         minHeight: "100dvh",
-        background: "var(--bg-secondary)",
+        background: isLight
+          ? "linear-gradient(180deg, rgba(255,255,255,0.97), rgba(248,244,239,0.98))"
+          : "linear-gradient(180deg, rgba(24,24,27,0.98), rgba(12,12,14,0.98))",
         borderRight: "1px solid var(--border)",
         display: "flex",
         flexDirection: "column",
@@ -86,41 +88,33 @@ export function Sidebar() {
           zIndex: -1,
         }}
       />
-      <div
-        style={{
-          padding: "20px 20px 16px",
-          borderBottom: "1px solid var(--border)",
-        }}
-      >
-        <Link
-          href="/dashboard"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            textDecoration: "none",
-            width: "100%",
-          }}
-        >
+
+      <div style={{ padding: "20px 20px 16px", borderBottom: "1px solid var(--border)" }}>
+        <Link href="/dashboard" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
           <Logo width={160} />
         </Link>
+        <div style={{ display: "flex", gap: "8px", marginTop: "14px", flexWrap: "wrap" }}>
+          <span className="sidebar-pill"><Zap size={12} /> Fluxo rápido</span>
+          <span className="sidebar-pill">Conta única</span>
+        </div>
       </div>
 
-      <nav style={{ flex: 1, padding: "12px 12px" }}>
+      <nav style={{ flex: 1, padding: "14px 12px", overflowY: "auto" }}>
         <p
           style={{
             fontSize: "10px",
-            fontWeight: 600,
-            letterSpacing: "0.08em",
+            fontWeight: 700,
+            letterSpacing: "0.12em",
             color: "var(--text-muted)",
             textTransform: "uppercase",
             padding: "0 8px",
-            marginBottom: "8px",
+            marginBottom: "10px",
           }}
         >
-          Menu Principal
+          Navegação
         </p>
 
-        <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "2px" }}>
+        <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "4px" }}>
           {navItems.map(({ href, icon: Icon, label }) => {
             const isActive = pathname.startsWith(href);
             return (
@@ -131,29 +125,25 @@ export function Sidebar() {
                     display: "flex",
                     alignItems: "center",
                     gap: "10px",
-                    padding: "9px 10px",
-                    borderRadius: "8px",
+                    padding: "10px 11px",
+                    borderRadius: "12px",
                     textDecoration: "none",
                     fontSize: "13.5px",
-                    fontWeight: isActive ? 600 : 400,
-                    color: isActive ? "#fff" : "var(--text-secondary)",
+                    fontWeight: isActive ? 700 : 500,
+                    color: isActive ? (isLight ? "#111" : "#fff") : "var(--text-secondary)",
                     background: isActive
-                      ? "linear-gradient(135deg, rgba(234,88,12,0.25), rgba(79,70,229,0.15))"
+                      ? isLight
+                        ? "linear-gradient(135deg, rgba(234,88,12,0.10), rgba(255,255,255,0.95))"
+                        : "linear-gradient(135deg, rgba(234,88,12,0.12), rgba(14,165,233,0.06))"
                       : "transparent",
-                    border: isActive ? "1px solid rgba(234,88,12,0.3)" : "1px solid transparent",
+                    border: isActive ? "1px solid rgba(234,88,12,0.22)" : "1px solid transparent",
                     transition: "all 0.15s ease",
-                    position: "relative",
                   }}
                   className={cn(!isActive && "sidebar-link")}
                 >
-                  <Icon
-                    size={16}
-                    style={{ color: isActive ? "#fb923c" : "var(--text-muted)", flexShrink: 0 }}
-                  />
+                  <Icon size={16} style={{ color: isActive ? "#ea580c" : "var(--text-muted)" }} />
                   {label}
-                  {isActive && (
-                    <ChevronRight size={13} style={{ marginLeft: "auto", color: "#fb923c" }} />
-                  )}
+                  {isActive && <ChevronRight size={13} style={{ marginLeft: "auto", color: "#ea580c" }} />}
                 </Link>
               </li>
             );
@@ -161,15 +151,7 @@ export function Sidebar() {
         </ul>
       </nav>
 
-      <div
-        style={{
-          padding: "12px",
-          borderTop: "1px solid var(--border)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "2px",
-        }}
-      >
+      <div style={{ padding: "12px", borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: "4px" }}>
         {bottomItems.map(({ href, icon: Icon, label }) => (
           <Link
             key={href}
@@ -178,8 +160,8 @@ export function Sidebar() {
               display: "flex",
               alignItems: "center",
               gap: "10px",
-              padding: "9px 10px",
-              borderRadius: "8px",
+              padding: "10px 11px",
+              borderRadius: "12px",
               textDecoration: "none",
               fontSize: "13.5px",
               color: "var(--text-secondary)",
@@ -187,7 +169,7 @@ export function Sidebar() {
             }}
             className="sidebar-link"
           >
-            <Icon size={16} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+            <Icon size={16} style={{ color: "var(--text-muted)" }} />
             {label}
           </Link>
         ))}
@@ -198,9 +180,9 @@ export function Sidebar() {
             display: "flex",
             alignItems: "center",
             gap: "10px",
-            padding: "9px 10px",
-            borderRadius: "8px",
-            background: "none",
+            padding: "10px 11px",
+            borderRadius: "12px",
+            background: isLight ? "rgba(255,255,255,0.7)" : "none",
             border: "none",
             cursor: "pointer",
             width: "100%",
@@ -212,12 +194,12 @@ export function Sidebar() {
         >
           {theme === "dark" ? (
             <>
-              <Sun size={16} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+              <Sun size={16} style={{ color: "var(--text-muted)" }} />
               Modo Claro
             </>
           ) : (
             <>
-              <Moon size={16} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+              <Moon size={16} style={{ color: "var(--text-muted)" }} />
               Modo Escuro
             </>
           )}
@@ -229,23 +211,23 @@ export function Sidebar() {
             alignItems: "center",
             gap: "10px",
             padding: "10px",
-            marginTop: "4px",
-            borderRadius: "10px",
-            background: "var(--bg-card)",
+            marginTop: "6px",
+            borderRadius: "14px",
+            background: isLight ? "rgba(255,255,255,0.82)" : "rgba(24,24,27,0.8)",
             border: "1px solid var(--border)",
           }}
         >
           <div
             style={{
-              width: "32px",
-              height: "32px",
+              width: "34px",
+              height: "34px",
               borderRadius: "50%",
-              background: "linear-gradient(135deg, #ea580c, #9a3412)",
+              background: "linear-gradient(135deg, #ea580c, #fb923c)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               fontSize: "13px",
-              fontWeight: 700,
+              fontWeight: 800,
               color: "#fff",
               flexShrink: 0,
             }}
@@ -253,27 +235,10 @@ export function Sidebar() {
             M
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p
-              style={{
-                fontSize: "12px",
-                fontWeight: 600,
-                color: "var(--text-primary)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
+            <p style={{ fontSize: "12px", fontWeight: 700, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               Minha Empresa
             </p>
-            <p
-              style={{
-                fontSize: "11px",
-                color: "var(--text-muted)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
+            <p style={{ fontSize: "11px", color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               admin@empresa.com
             </p>
           </div>
@@ -296,6 +261,18 @@ export function Sidebar() {
       </div>
 
       <style>{`
+        .sidebar-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 11px;
+          font-weight: 700;
+          color: var(--text-secondary);
+          background: ${isLight ? "rgba(255,255,255,0.72)" : "rgba(255,255,255,0.02)"};
+          border: 1px solid var(--border);
+          border-radius: 999px;
+          padding: 6px 10px;
+        }
         .sidebar-link:hover {
           background: var(--bg-hover) !important;
           color: var(--text-primary) !important;

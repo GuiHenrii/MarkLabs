@@ -2,85 +2,124 @@
 
 import { useChat } from '@ai-sdk/react';
 import { useState } from 'react';
-import { MessageCircle, X, Send } from 'lucide-react';
+import { X, Send, Cpu, Bot } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
-  const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
-    api: '/api/chat',
-  });
+  const [input, setInput] = useState('');
+  const { messages, sendMessage, status } = useChat();
+
+  const isLoading = status === 'submitted' || status === 'streaming';
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setInput(e.target.value);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || isLoading) return;
+    sendMessage({ role: 'user', parts: [{ type: 'text', text: input }] });
+    setInput('');
+  };
 
   return (
-    <div className="fixed bottom-6 right-6 z-50">
-      {/* Botão de abrir/fechar */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-600 text-white shadow-lg transition-transform hover:scale-105 active:scale-95"
-      >
-        {isOpen ? <X className="h-6 w-6" /> : <MessageCircle className="h-6 w-6" />}
-      </button>
+    <aside 
+      className="fixed z-[9999]" 
+      style={{ bottom: '24px', right: '24px', minHeight: 'auto' }}
+    >
+      {/* Botão de abrir/fechar com glow laranja (Tony Stark vibe) */}
+      <div className="relative group">
+        <div className="absolute -inset-0.5 rounded-full bg-orange-500 opacity-40 blur-md group-hover:opacity-80 transition duration-500 animate-pulse"></div>
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className="relative flex h-14 w-14 items-center justify-center rounded-full bg-black/90 text-orange-500 border border-orange-500/60 shadow-[0_0_15px_rgba(249,115,22,0.6)] backdrop-blur-md transition-transform hover:scale-105 active:scale-95"
+        >
+          {isOpen ? <X className="h-6 w-6" /> : <Cpu className="h-7 w-7" />}
+        </button>
+      </div>
 
-      {/* Janela de chat */}
+      {/* Janela de chat estilo Interface Holográfica */}
       {isOpen && (
-        <div className="absolute bottom-20 right-0 flex h-[500px] w-[350px] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-950 sm:w-[400px]">
+        <div className="absolute bottom-20 right-0 flex h-[550px] w-[350px] sm:w-[400px] flex-col overflow-hidden rounded-2xl border border-orange-500/40 bg-black/70 shadow-[0_0_40px_rgba(249,115,22,0.2)] backdrop-blur-xl">
+
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-gray-100 bg-blue-600 p-4 text-white dark:border-gray-800">
-            <div>
-              <h3 className="font-semibold">Assistente MarkLabs</h3>
-              <p className="text-xs text-blue-100">Como posso ajudar hoje?</p>
+          <div className="flex items-center justify-between border-b border-orange-500/40 bg-black/50 p-4 text-orange-100">
+            <div className="flex items-center gap-3">
+              <div className="relative flex h-8 w-8 items-center justify-center rounded-full border border-orange-500/50 bg-orange-500/10">
+                <Bot className="h-4 w-4 text-orange-400" />
+                <div className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.9)] animate-pulse"></div>
+              </div>
+              <div>
+                <h3 className="font-bold uppercase tracking-wider text-orange-500 text-sm">VANTA</h3>
+                <p className="text-[10px] text-orange-500/70 font-mono tracking-widest">OPERANDO</p>
+              </div>
             </div>
-            <button onClick={() => setIsOpen(false)} className="text-white hover:text-gray-200">
+            <button onClick={() => setIsOpen(false)} className="text-orange-500/70 hover:text-orange-400 transition-colors">
               <X className="h-5 w-5" />
             </button>
           </div>
 
           {/* Mensagens */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="flex-1 overflow-y-auto p-4 space-y-5">
             {messages.length === 0 ? (
-              <div className="flex h-full items-center justify-center text-center text-sm text-gray-500">
-                Olá! Faça uma pergunta sobre suas campanhas ou métricas.
+              <div className="flex h-full flex-col items-center justify-center space-y-4 text-center opacity-80">
+                <div className="relative flex h-20 w-20 items-center justify-center">
+                  <div className="absolute inset-0 rounded-full border border-orange-500/20 animate-[spin_4s_linear_infinite]"></div>
+                  <div className="absolute inset-2 rounded-full border border-orange-500/40 border-dashed animate-[spin_3s_linear_infinite_reverse]"></div>
+                  <Cpu className="h-8 w-8 text-orange-500/60" />
+                </div>
+                <p className="text-sm text-orange-400/60 font-mono">
+                  SISTEMA INICIADO.<br />AGUARDANDO COMANDOS...
+                </p>
               </div>
             ) : (
               messages.map(m => (
                 <div
                   key={m.id}
                   className={cn(
-                    "flex w-max max-w-[80%] flex-col gap-2 rounded-lg px-3 py-2 text-sm",
+                    "flex w-max max-w-[85%] flex-col gap-1 rounded-xl px-4 py-2.5 text-sm font-medium shadow-sm",
                     m.role === 'user'
-                      ? "ml-auto bg-blue-600 text-white"
-                      : "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+                      ? "ml-auto bg-orange-500/10 border border-orange-500/40 text-orange-100 rounded-tr-none"
+                      : "bg-black/60 border border-white/10 text-gray-200 rounded-tl-none"
                   )}
                 >
-                  {m.content}
+                  <span className="text-[10px] uppercase font-bold tracking-wider opacity-60 mb-0.5" style={{ color: m.role === 'user' ? '#f97316' : '#9ca3af' }}>
+                    {m.role === 'user' ? 'USER' : 'SYSTEM'}
+                  </span>
+                  {typeof m.content === 'string' ? m.content : m.parts?.map((part, i) => (
+                    <span key={i}>{part.type === 'text' ? part.text : ''}</span>
+                  ))}
                 </div>
               ))
             )}
+
             {isLoading && (
-              <div className="flex w-max max-w-[80%] flex-col gap-2 rounded-lg px-3 py-2 text-sm bg-gray-100 dark:bg-gray-800">
-                <span className="flex gap-1">
-                  <span className="animate-bounce">.</span>
-                  <span className="animate-bounce delay-75">.</span>
-                  <span className="animate-bounce delay-150">.</span>
+              <div className="flex w-max max-w-[80%] flex-col gap-2 rounded-xl rounded-tl-none border border-white/10 bg-black/60 px-4 py-3 text-sm text-gray-200">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-gray-400 opacity-60 mb-0.5">SYSTEM</span>
+                <span className="flex items-center gap-1.5 h-4">
+                  <span className="h-1.5 w-1.5 rounded-full bg-orange-500 animate-pulse"></span>
+                  <span className="h-1.5 w-1.5 rounded-full bg-orange-500 animate-pulse delay-150"></span>
+                  <span className="h-1.5 w-1.5 rounded-full bg-orange-500 animate-pulse delay-300"></span>
                 </span>
               </div>
             )}
           </div>
 
           {/* Input */}
-          <form onSubmit={handleSubmit} className="border-t border-gray-100 p-3 dark:border-gray-800">
-            <div className="flex items-center gap-2">
+          <form onSubmit={handleSubmit} className="border-t border-orange-500/40 bg-black/60 p-3">
+            <div className="relative flex items-center group">
               <input
-                className="flex-1 rounded-full border border-gray-300 bg-gray-50 px-4 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-900"
+                className="flex-1 rounded-lg border border-orange-500/30 bg-black/50 px-4 py-3 text-sm text-orange-100 font-mono placeholder:text-orange-500/40 focus:border-orange-500/70 focus:outline-none focus:ring-1 focus:ring-orange-500/50 transition-all shadow-inner"
                 value={input}
                 onChange={handleInputChange}
-                placeholder="Digite sua mensagem..."
+                placeholder="Insira o comando..."
                 disabled={isLoading}
               />
               <button
                 type="submit"
-                disabled={isLoading || !input.trim()}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 text-white disabled:opacity-50 transition-colors hover:bg-blue-700"
+                disabled={isLoading || !input?.trim()}
+                className="absolute right-2 flex h-8 w-8 items-center justify-center rounded-md bg-orange-500/20 text-orange-400 disabled:opacity-30 transition-all hover:bg-orange-500 hover:text-black hover:shadow-[0_0_10px_rgba(249,115,22,0.8)]"
               >
                 <Send className="h-4 w-4" />
                 <span className="sr-only">Enviar</span>
@@ -89,6 +128,6 @@ export function ChatWidget() {
           </form>
         </div>
       )}
-    </div>
+    </aside>
   );
 }
