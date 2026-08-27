@@ -1,65 +1,83 @@
-# 🚀 MarkLabs - Hub de Inteligência para Redes Sociais
+# MarkLabs - Hub de Inteligencia para Redes Sociais
 
-Bem-vindo ao **MarkLabs**, a solução definitiva para gerenciamento de presença digital e análise de dados em redes sociais. Este projeto utiliza uma arquitetura moderna em monorepo para oferecer performance, escalabilidade e uma experiência de usuário fluida.
+**Versao atual: v0.1.2**
 
-## 🏗️ Estrutura do Projeto
+Bem-vindo ao **MarkLabs**, a solucao para gerenciamento de presenca digital, analise de dados e automacao em redes sociais. Este projeto usa uma arquitetura moderna em monorepo para manter a plataforma organizada, escalavel e facil de evoluir.
 
-Nosso ecossistema é dividido em aplicações e pacotes compartilhados:
+## O que mudou na v0.1.2
 
-- **Apps:**
-  - `web`: Interface principal construída com Next.js 16 (React 19).
-  - `worker`: Processamento de tarefas em background com BullMQ e Redis.
-- **Packages:**
+- Revisao da interface web com navegação mais consistente no `layout`, `sidebar` e `topbar`.
+- Ajustes visuais globais para melhorar a experiencia em desktop e mobile.
+- Evolucao da tela de composicao de posts, com fluxo mais confiavel de criacao e envio.
+- Correcao do falso positivo de publicacao quando a API rejeita o conteudo.
+- Expansao das rotas de analytics para coleta ao vivo por conta social.
+- Consolidacao de metricas por periodo com suporte a `7 dias`, `30 dias`, `90 dias` e `6 meses`.
+- Melhorias nos provedores sociais de Facebook, Instagram e LinkedIn.
+- Ajustes nas rotas de conexao, callback e sincronizacao de contas.
+- Atualizacoes em worker, rotas de API, `next.config.ts` e workflows de CI/E2E.
+
+## Estrutura do Projeto
+
+O ecossistema e dividido em aplicacoes e pacotes compartilhados:
+
+- Apps:
+  - `web`: Interface principal com Next.js.
+  - `worker`: Processamento de tarefas em background.
+- Packages:
   - `database`: Esquemas e cliente Prisma.
-  - `social`: Provedores de integração (Facebook, LinkedIn, Instagram).
+  - `social`: Provedores de integracao sociais.
   - `ui`: Componentes de interface compartilhados.
   - `permissions`: Sistema de controle de acesso.
 
-## 🛠️ Tecnologias Principais
+## Tecnologias Principais
 
-- **Framework:** [Next.js](https://nextjs.org/)
-- **Linguagem:** [TypeScript](https://www.typescriptlang.org/)
-- **Banco de Dados:** [Prisma](https://www.prisma.io/) com PostgreSQL
-- **Estilização:** [Tailwind CSS](https://tailwindcss.com/)
-- **Autenticação:** [NextAuth.js](https://next-auth.js.org/)
-- **Gerenciamento de Monorepo:** [TurboRepo](https://turbo.build/)
-- **Comunicação/E-mail:** [Resend](https://resend.com/)
-- **Uploads:** [Cloudinary](https://cloudinary.com/)
-- **Fila de Tarefas:** [BullMQ](https://docs.bullmq.io/) + [Redis](https://redis.io/)
+- Framework: [Next.js](https://nextjs.org/)
+- Linguagem: [TypeScript](https://www.typescriptlang.org/)
+- Banco de Dados: [Prisma](https://www.prisma.io/) com PostgreSQL
+- Estilização: [Tailwind CSS](https://tailwindcss.com/)
+- Autenticação: [NextAuth.js](https://next-auth.js.org/)
+- Gerenciamento de Monorepo: [Turborepo](https://turbo.build/)
+- Comunicação/E-mail: [Resend](https://resend.com/)
+- Uploads: [Cloudinary](https://cloudinary.com/)
+- Fila de Tarefas: [BullMQ](https://docs.bullmq.io/) + [Redis](https://redis.io/)
 
-## 🚀 Como Começar
+## Como Comecar
 
-### Pré-requisitos
+### Pre-requisitos
 - Node.js >= 18
-- Redis (para os workers)
+- Redis para os workers
 - PostgreSQL
 
-### Instalação
+### Instalacao
 
-1. Clone o repositório
-2. Instale as dependências:
-   ```bash
-   npm install
-   ```
+1. Clone o repositorio.
+2. Instale as dependencias:
 
-### Configuração
-Crie um arquivo `.env.local` na pasta `apps/web` (use o `.env.example` como guia) e preencha as chaves necessárias (API Keys, Database URL, etc).
+```bash
+npm install
+```
 
-> 🛡️ **Nota de Segurança:** Chaves de API nunca devem ser commitadas. O projeto já conta com `.gitignore` configurado na raiz para proteger seus segredos.
+### Configuracao
 
-### Execução
+Crie um arquivo `.env.local` na pasta `apps/web` usando o `.env.example` como guia e preencha as chaves necessarias.
 
-Para rodar todo o projeto em modo de desenvolvimento:
+> **Nota de seguranca:** Chaves de API nunca devem ser commitadas.
+
+### Execucao
+
+Para rodar o projeto em modo de desenvolvimento:
+
 ```bash
 npm run dev
 ```
 
-## 📈 Funcionalidades
-- ✅ Gestão de múltiplas contas sociais.
-- ✅ Dashboard intuitivo com Recharts.
-- ✅ Agendamento de postagens.
-- ✅ Sistema de convites para times.
-- ✅ Autenticação robusta (JWT + Sessions).
+## Funcionalidades
+
+- Gestao de multiplas contas sociais
+- Dashboard intuitivo com Recharts
+- Agendamento de postagens
+- Sistema de convites para times
+- Autenticacao robusta com JWT e sessions
 
 ---
-Desenvolvido com ❤️ por **UNIT**.
+Desenvolvido com amor por **UNIT**.

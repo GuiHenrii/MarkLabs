@@ -4,7 +4,7 @@ Plataforma unificada para gerenciamento, agendamento e publicacao de conteudos n
 
 ## Versao atual
 
-**v0.1.0**
+**v0.1.2**
 
 ## O que mudou ate agora
 
