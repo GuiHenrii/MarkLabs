@@ -42,8 +42,11 @@ export async function POST(request: Request) {
     const account = await prisma.socialAccount.findFirst({ where: { id: socialAccountId, teamId, isActive: true }, select: { id: true } });
     if (!account) return NextResponse.json({ error: "Conta social não encontrada nesta equipe." }, { status: 400 });
     const publishAt = scheduledAt ? new Date(scheduledAt) : null;
+    const scheduleGracePeriodMs = 60 * 1000;
     if (scheduledAt && Number.isNaN(publishAt?.getTime())) return NextResponse.json({ error: "Data de agendamento inválida." }, { status: 400 });
-    if (publishAt && publishAt <= new Date()) return NextResponse.json({ error: "O agendamento deve ser no futuro." }, { status: 400 });
+    if (publishAt && publishAt.getTime() <= Date.now() + scheduleGracePeriodMs) {
+      return NextResponse.json({ error: "O agendamento deve ser pelo menos 1 minuto no futuro." }, { status: 400 });
+    }
 
     const result = await prisma.$transaction(async (tx) => {
       const post = await tx.post.create({

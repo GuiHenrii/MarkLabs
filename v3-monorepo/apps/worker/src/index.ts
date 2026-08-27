@@ -50,7 +50,8 @@ async function publishPost(postId: string) {
   if (post.status === PostStatus.PUBLISHED) return;
   await prisma.post.update({ where: { id: post.id }, data: { status: PostStatus.PUBLISHING } });
   
-  let provider;
+  try {
+    let provider;
   const appId = process.env.META_APP_ID;
   const appSecret = process.env.META_APP_SECRET;
 
@@ -79,7 +80,14 @@ async function publishPost(postId: string) {
   });
   if (!result.success) throw new Error(result.error || "A publicação falhou.");
   await prisma.post.update({ where: { id: post.id }, data: { status: PostStatus.PUBLISHED, platformPostId: result.providerPostId, publishedAt: new Date(), errorMessage: null } });
-  log("INFO", "Post publicado", { postId, platformPostId: result.providerPostId });
+    log("INFO", "Post publicado", { postId, platformPostId: result.providerPostId });
+  } catch (error) {
+    await prisma.post.update({
+      where: { id: post.id },
+      data: { status: PostStatus.FAILED, errorMessage: error instanceof Error ? error.message : "Falha ao publicar." },
+    });
+    throw error;
+  }
 }
 
 function emptySnapshot(): AnalyticsSnapshot {

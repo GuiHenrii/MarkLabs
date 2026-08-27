@@ -73,6 +73,8 @@ export default function CalendarPage() {
     };
 
     fetchPosts();
+    const interval = window.setInterval(fetchPosts, 10_000);
+    return () => window.clearInterval(interval);
   }, [teamId]);
 
   const daysInMonth = getDaysInMonth(currentYear, currentMonth);

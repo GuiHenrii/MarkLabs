@@ -63,7 +63,17 @@ export async function publishPost(postId: string) {
     data: { status: PostStatus.PUBLISHING, errorMessage: null },
   });
 
-  const result = await provider.publish(post.socialAccount.accessToken, post.socialAccount.platformId, input);
+  let result;
+  try {
+    result = await provider.publish(post.socialAccount.accessToken, post.socialAccount.platformId, input);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Falha ao publicar.";
+    await prisma.post.update({
+      where: { id: post.id },
+      data: { status: PostStatus.FAILED, errorMessage: message },
+    });
+    throw error;
+  }
 
   if (!result.success) {
     await prisma.post.update({

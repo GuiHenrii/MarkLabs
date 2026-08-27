@@ -567,6 +567,10 @@ export default function ComposePage() {
           });
         }
 
+        const scheduledAt = (!asDraft && isScheduling && scheduleDate)
+          ? new Date(`${scheduleDate}T${scheduleTime || "12:00"}:00`).toISOString()
+          : null;
+
         const res = await fetch("/api/posts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -577,7 +581,7 @@ export default function ComposePage() {
             postType: type,
             media: preparedMedia,
             isPublishNow: asDraft ? false : !isScheduling,
-            scheduledAt: (!asDraft && isScheduling && scheduleDate) ? `${scheduleDate}T${scheduleTime || "12:00"}:00Z` : null,
+            scheduledAt,
           }),
         });
 
