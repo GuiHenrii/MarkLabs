@@ -1,4 +1,10 @@
-import "dotenv/config";
+import path from "node:path";
+import dotenv from "dotenv";
+
+// O worker pode ser iniciado pela raiz ou pelo próprio workspace.
+// Carrega o .env da raiz para manter as credenciais disponíveis nos dois casos.
+dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
+dotenv.config();
 import { prisma, PostStatus } from "@marklabs/database";
 import { FacebookProvider, InstagramProvider, LinkedInProvider, AnalyticsSnapshot, SocialProvider } from "@marklabs/social";
 import { Worker, Job } from "bullmq";
@@ -18,8 +24,8 @@ function log(level: "INFO" | "WARN" | "ERROR", message: string, meta?: Record<st
   console.log(JSON.stringify({ timestamp: new Date().toISOString(), level, service: "marklabs-worker", message, ...meta }));
 }
 
-async function resolveR2MediaUrl(url: string) {
-  if (!url || !url.includes("r2")) return url;
+async function resolveR2MediaUrl(url: string, mediaType?: "IMAGE" | "VIDEO") {
+  if (!url) return url;
   try {
     const { GetObjectCommand, S3Client } = await import("@aws-sdk/client-s3");
     const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
@@ -27,6 +33,7 @@ async function resolveR2MediaUrl(url: string) {
     const accessKeyId = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID;
     const secretAccessKey = process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY;
     const bucketName = process.env.CLOUDFLARE_R2_BUCKET_NAME || "marklabs";
+    const publicBaseUrl = process.env.CLOUDFLARE_R2_PUBLIC_URL?.replace(/\/$/, "");
     if (!accountId || !accessKeyId || !secretAccessKey) return url;
     const client = new S3Client({
       region: "auto",
@@ -34,8 +41,16 @@ async function resolveR2MediaUrl(url: string) {
       credentials: { accessKeyId, secretAccessKey },
     });
     const parsed = new URL(url);
-    const key = parsed.pathname.replace(/^\/+/, "");
-    return await getSignedUrl(client, new GetObjectCommand({ Bucket: bucketName, Key: key }), { expiresIn: 60 * 30 });
+    const isConfiguredPublicUrl = Boolean(publicBaseUrl && parsed.origin === new URL(publicBaseUrl).origin);
+    if (!isConfiguredPublicUrl && !parsed.hostname.includes("r2")) return url;
+
+    const key = decodeURIComponent(parsed.pathname.replace(/^\/+/, ""));
+    const contentType = mediaType === "VIDEO" ? "video/mp4" : mediaType === "IMAGE" ? "image/jpeg" : undefined;
+    return await getSignedUrl(
+      client,
+      new GetObjectCommand({ Bucket: bucketName, Key: key, ...(contentType ? { ResponseContentType: contentType } : {}) }),
+      { expiresIn: 60 * 30 }
+    );
   } catch {
     return url;
   }
@@ -73,7 +88,7 @@ async function publishPost(postId: string) {
     postType: post.postType as "POST" | "REEL" | "STORY" | "CAROUSEL",
     media: await Promise.all(
       (post.media as Array<{ url: string; type: "IMAGE" | "VIDEO" }>).map(async (media) => ({
-        url: await resolveR2MediaUrl(media.url),
+        url: await resolveR2MediaUrl(media.url, media.type),
         type: media.type,
       }))
     ),

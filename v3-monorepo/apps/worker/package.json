@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "npx tsx watch src/index.ts",
+    "dev": "node --require ./scripts/node-user-info-fallback.cjs --import tsx --watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "lint": "eslint src",

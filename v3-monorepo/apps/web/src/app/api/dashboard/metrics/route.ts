@@ -3,6 +3,20 @@ import { prisma, PostStatus } from "@marklabs/database";
 import { FacebookProvider, InstagramProvider } from "@marklabs/social";
 import { apiErrorResponse, requireTeamAccess } from "@/lib/authorization";
 
+function normalizePostStatus(post: {
+  status: PostStatus;
+  errorMessage?: string | null;
+  updatedAt?: Date;
+  publishedAt?: Date | null;
+}) {
+  if (post.status !== PostStatus.PUBLISHING) return post.status;
+  const staleMs = Date.now() - new Date(post.updatedAt ?? 0).getTime();
+  if (post.errorMessage || (!post.publishedAt && staleMs > 5 * 60_000)) {
+    return PostStatus.FAILED;
+  }
+  return post.status;
+}
+
 export async function GET(request: Request) {
   const teamId = new URL(request.url).searchParams.get("teamId");
   if (!teamId) return NextResponse.json({ error: "TeamId é obrigatório." }, { status: 400 });
@@ -112,7 +126,10 @@ export async function GET(request: Request) {
       connectedAccounts,
       scheduledPosts,
       publishedPosts,
-      recentPosts,
+      recentPosts: recentPosts.map((post) => ({
+        ...post,
+        status: normalizePostStatus(post),
+      })),
       totals,
       byPlatform,
       engagementSeries,

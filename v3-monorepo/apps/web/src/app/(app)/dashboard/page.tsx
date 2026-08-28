@@ -7,7 +7,15 @@ import { Topbar } from "@/components/layout/Topbar";
 import { useTeam } from "@/components/providers/TeamProvider";
 import { getStatusLabel } from "@/lib/utils";
 
-type RecentPost = { id: string; status: string; content?: string; scheduledAt?: string | null; createdAt?: string };
+type RecentPost = {
+  id: string;
+  status: string;
+  content?: string;
+  scheduledAt?: string | null;
+  createdAt?: string;
+  errorMessage?: string | null;
+  socialAccount?: { name?: string | null; username?: string | null; platform?: string | null } | null;
+};
 type Metrics = { connectedAccounts?: number; publishedPosts?: number; scheduledPosts?: number; byPlatform?: Record<string, number>; recentPosts?: RecentPost[] };
 type Action = { href: string; label: string; title: string; text: string; icon: ElementType };
 
@@ -43,6 +51,11 @@ export default function DashboardPage() {
   const recentPost = metrics?.recentPosts?.[0];
   const statusKey = recentPost?.status?.toUpperCase();
   const statusMeta = statusKey ? statusStyles[statusKey] : null;
+  const accountLabel =
+    recentPost?.socialAccount?.name ||
+    recentPost?.socialAccount?.username ||
+    recentPost?.socialAccount?.platform ||
+    "Conta não informada";
 
   const loadMetrics = async () => {
     if (!teamId) return;
@@ -150,6 +163,7 @@ export default function DashboardPage() {
           </div>
           <strong style={{ color: statusMeta.color }}>{statusMeta.label}</strong>
           <p>{recentPost.content ? recentPost.content.slice(0, 92) : "Última publicação monitorada pelo dashboard."}</p>
+          <span>Conta: {accountLabel}</span>
           <span>Post recente: {getStatusLabel(recentPost.status)}</span>
         </div>
       )}

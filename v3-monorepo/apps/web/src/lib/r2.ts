@@ -61,26 +61,29 @@ export async function createSignedUploadUrl(input: {
   };
 }
 
-export async function createSignedReadUrl(key: string) {
+export async function createSignedReadUrl(key: string, contentType?: string) {
   const client = getClient();
   const command = new GetObjectCommand({
     Bucket: bucketName,
     Key: key,
+    ...(contentType ? { ResponseContentType: contentType } : {}),
   });
 
   return getSignedUrl(client, command, { expiresIn: 60 * 30 });
 }
 
-export async function resolveR2MediaUrl(urlOrKey: string) {
+export async function resolveR2MediaUrl(urlOrKey: string, mediaType?: "IMAGE" | "VIDEO") {
   if (!urlOrKey) return urlOrKey;
-  if (!urlOrKey.includes("r2")) return urlOrKey;
 
   try {
     const parsed = new URL(urlOrKey);
-    const prefix = publicBaseUrl && parsed.origin === publicBaseUrl ? publicBaseUrl : undefined;
-    const key = prefix ? parsed.pathname.replace(/^\//, "") : parsed.pathname.replace(/^\/+/, "");
+    const isConfiguredPublicUrl = Boolean(publicBaseUrl && parsed.origin === new URL(publicBaseUrl).origin);
+    if (!isConfiguredPublicUrl && !parsed.hostname.includes("r2")) return urlOrKey;
+
+    const key = decodeURIComponent(parsed.pathname.replace(/^\/+/, ""));
     if (!key) return urlOrKey;
-    return await createSignedReadUrl(key);
+    const contentType = mediaType === "VIDEO" ? "video/mp4" : mediaType === "IMAGE" ? "image/jpeg" : undefined;
+    return await createSignedReadUrl(key, contentType);
   } catch {
     return urlOrKey;
   }
@@ -93,6 +96,7 @@ export async function uploadToR2(file: File, key: string): Promise<void> {
       Bucket: bucketName,
       Key: key,
       Body: Buffer.from(await file.arrayBuffer()),
+      ContentType: file.type || "application/octet-stream",
       CacheControl: "public, max-age=31536000, immutable",
     })
   );

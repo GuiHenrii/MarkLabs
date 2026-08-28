@@ -306,7 +306,10 @@ export class InstagramProvider implements SocialProvider {
           method: "POST",
           body: new URLSearchParams({ creation_id: parentData.id, access_token: accessToken }),
         });
-        if (!publishResponse.ok) return { success: false, error: "Falha ao publicar carrossel no Instagram." };
+        if (!publishResponse.ok) {
+          const error = await publishResponse.json().catch(() => ({}));
+          return { success: false, error: error?.error?.message || "Falha ao publicar carrossel no Instagram." };
+        }
         const published = await publishResponse.json() as { id: string };
         return { success: true, providerPostId: published.id };
       }
@@ -325,7 +328,10 @@ export class InstagramProvider implements SocialProvider {
         method: "POST",
         body: new URLSearchParams({ creation_id: creationId, access_token: accessToken }),
       });
-      if (!publishResponse.ok) return { success: false, error: "Falha ao publicar no Instagram." };
+      if (!publishResponse.ok) {
+        const error = await publishResponse.json().catch(() => ({}));
+        return { success: false, error: error?.error?.message || "Falha ao publicar no Instagram." };
+      }
       const data = await publishResponse.json() as { id: string };
       return { success: true, providerPostId: data.id };
     } catch (error) {

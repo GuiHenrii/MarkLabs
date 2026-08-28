@@ -90,7 +90,9 @@ export default function CalendarPage() {
       date: dateKey,
       time: timeStr,
       platform: post.socialAccount?.platform || "INSTAGRAM",
+      accountName: post.socialAccount?.name || post.socialAccount?.username || post.socialAccount?.platform || "Conta não informada",
       content: post.content,
+      errorMessage: post.errorMessage,
       status: post.status,
       postType: post.postType || "POST",
       color: platformColors[post.socialAccount?.platform || "INSTAGRAM"] || "#ea580c",
@@ -325,6 +327,7 @@ export default function CalendarPage() {
                                 <TypeIcon size={10} />
                                 {typeCfg.label}
                               </span>
+                              <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>• {post.accountName}</span>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                               <StatusIcon size={11} style={{ color: cfg.color }} />
@@ -334,6 +337,11 @@ export default function CalendarPage() {
                           <p style={{ fontSize: "12px", color: "var(--text-secondary)", lineHeight: 1.5, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
                             {post.content}
                           </p>
+                          {post.status === "FAILED" && (
+                            <p style={{ fontSize: "11px", color: "#f87171", marginTop: "6px", lineHeight: 1.4 }}>
+                              {post.errorMessage || `Esse post falhou na conta ${post.accountName}.`}
+                            </p>
+                          )}
                           <p style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "6px" }}>🕐 {post.time}</p>
                         </div>
                       );

@@ -4,6 +4,20 @@ import { apiErrorResponse, requireTeamAccess } from "@/lib/authorization";
 import { publishPost } from "@/lib/social-publisher";
 import { z } from "zod";
 
+function normalizePostStatus(post: {
+  status: PostStatus;
+  errorMessage?: string | null;
+  updatedAt?: Date;
+  publishedAt?: Date | null;
+}) {
+  if (post.status !== PostStatus.PUBLISHING) return post.status;
+  const staleMs = Date.now() - new Date(post.updatedAt ?? 0).getTime();
+  if (post.errorMessage || (!post.publishedAt && staleMs > 5 * 60_000)) {
+    return PostStatus.FAILED;
+  }
+  return post.status;
+}
+
 function isMediaUrl(value: string) {
   if (!value.trim()) return false;
   if (value.startsWith("/api/media/")) return true;
@@ -112,7 +126,12 @@ export async function GET(request: Request) {
       },
       orderBy: { createdAt: "desc" },
     });
-    return NextResponse.json(posts);
+    return NextResponse.json(
+      posts.map((post) => ({
+        ...post,
+        status: normalizePostStatus(post),
+      }))
+    );
   } catch (error) {
     const result = apiErrorResponse(error);
     return NextResponse.json({ error: result.error }, { status: result.status });

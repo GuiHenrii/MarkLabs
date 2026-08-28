@@ -52,7 +52,7 @@ export async function publishPost(postId: string) {
     postType: post.postType as "POST" | "REEL" | "STORY" | "CAROUSEL",
     media: await Promise.all(
       (post.media as Array<{ url: string; type: "IMAGE" | "VIDEO" }>).map(async (media) => ({
-        url: await resolveR2MediaUrl(resolveMediaUrl(media.url)),
+        url: await resolveR2MediaUrl(resolveMediaUrl(media.url), media.type),
         type: media.type,
       }))
     ),
